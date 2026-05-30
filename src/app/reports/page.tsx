@@ -11,7 +11,6 @@ export default function ReportsPage() {
   const rows = [
     ["市場全体の雰囲気", currentReport.market],
     ["監視銘柄の状態", currentReport.watchlist],
-    ["今日のニュースまとめ", currentReport.news],
     ["AI総合判断", currentReport.decision],
     ["明日の戦略", currentReport.tomorrow]
   ];
@@ -41,14 +40,21 @@ export default function ReportsPage() {
         <p className="text-sm text-slate-400">日付</p>
         <p className="text-lg font-semibold text-slate-50">{currentReport.date}</p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2">
         {rows.map(([label, value]) => (
-          <section key={label} className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
+          <section key={label} className="min-w-0 rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
             <h3 className="font-semibold text-slate-50">{label}</h3>
-            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-300">{value}</p>
+            <ReportText value={value} />
           </section>
         ))}
       </div>
+
+      <section className="min-w-0 rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+        <h3 className="font-semibold text-slate-50">今日のニュースまとめ</h3>
+        <p className="mt-1 text-xs text-slate-500">長いニュース要約は銘柄ごとに区切って表示します。</p>
+        <ReportNewsSummary value={currentReport.news} />
+      </section>
+
       <section className="space-y-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-50">ニュース別の読み解き</h3>
@@ -60,4 +66,44 @@ export default function ReportsPage() {
       </section>
     </div>
   );
+}
+
+function ReportText({ value }: { value: string }) {
+  return (
+    <div className="mt-2 space-y-2 text-sm leading-6 text-slate-300">
+      {splitLines(value).map((line, index) => (
+        <p key={`${line}-${index}`} className="break-words [overflow-wrap:anywhere]">{line}</p>
+      ))}
+    </div>
+  );
+}
+
+function ReportNewsSummary({ value }: { value: string }) {
+  const groups = value.split(/\n(?=【|[0-9]+\.\s)/).map((item) => item.trim()).filter(Boolean);
+
+  if (groups.length === 0) return <p className="mt-3 text-sm text-slate-400">ニュースまとめはまだありません。</p>;
+
+  return (
+    <div className="mt-4 grid min-w-0 gap-3">
+      {groups.map((group, index) => {
+        const lines = splitLines(group);
+        const title = lines[0] ?? `ニュース ${index + 1}`;
+        const body = lines.slice(1);
+        return (
+          <article key={`${title}-${index}`} className="min-w-0 rounded-xl border border-white/10 bg-slate-950/50 p-3">
+            <h4 className="break-words text-sm font-bold leading-6 text-sky-100 [overflow-wrap:anywhere]">{title}</h4>
+            <div className="mt-2 space-y-1.5">
+              {body.length ? body.map((line, lineIndex) => (
+                <p key={`${line}-${lineIndex}`} className="break-words text-xs leading-5 text-slate-400 [overflow-wrap:anywhere]">{line}</p>
+              )) : null}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function splitLines(value: string) {
+  return value.split("\n").map((line) => line.trim()).filter(Boolean);
 }

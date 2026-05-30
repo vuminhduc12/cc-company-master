@@ -13,20 +13,17 @@ export function NewsCard({ item, featured = false }: { item: NewsItem; featured?
   return (
     <article className={`relative min-w-0 overflow-hidden rounded-2xl border bg-slate-900/80 p-3 shadow-lg shadow-black/20 ring-1 sm:p-4 ${tickerStyle.card} ${sentimentStyle} ${featured ? "lg:p-5" : ""}`}>
       <div className={`absolute inset-y-0 left-0 w-1.5 ${tickerStyle.rail}`} />
-      <div className={`absolute right-3 top-3 rounded-full border px-2.5 py-1 text-[11px] font-black tracking-[0.14em] sm:right-4 sm:top-4 sm:px-3 sm:text-xs sm:tracking-[0.18em] ${tickerStyle.watermark}`}>
-        {item.ticker}
-      </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 pr-14 sm:pr-20">
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <span className={`rounded-full border px-2.5 py-1 font-bold ${tickerStyle.badge}`}>
               {item.ticker} News
             </span>
-            <span>{item.source}</span>
+            <span className="break-words [overflow-wrap:anywhere]">{item.source}</span>
             <span className="text-slate-600">•</span>
             <span>{item.publishedAt}</span>
           </div>
-          <h3 className={`mt-2 break-words font-semibold leading-6 text-slate-50 ${featured ? "text-base sm:text-lg" : "text-sm sm:text-base"}`}>
+          <h3 className={`mt-2 break-words font-semibold leading-6 text-slate-50 [overflow-wrap:anywhere] ${featured ? "text-base sm:text-lg" : "text-sm sm:text-base"}`}>
             {item.url ? (
               <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-sky-200">
                 {item.title}
@@ -34,7 +31,7 @@ export function NewsCard({ item, featured = false }: { item: NewsItem; featured?
             ) : item.title}
           </h3>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${tickerStyle.impact}`}>
             Impact {item.impactScore}/10
           </span>
@@ -44,7 +41,7 @@ export function NewsCard({ item, featured = false }: { item: NewsItem; featured?
 
       <div className={`mt-4 rounded-xl border bg-slate-950/50 p-3 ${tickerStyle.panel}`}>
         <p className={`text-xs font-semibold uppercase tracking-wide ${tickerStyle.label}`}>AI要点 / {item.ticker}</p>
-        <p className="mt-2 text-sm leading-6 text-slate-100">{summary.point}</p>
+        <p className="mt-2 break-words text-sm leading-6 text-slate-100 [overflow-wrap:anywhere]">{summary.point}</p>
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -55,16 +52,16 @@ export function NewsCard({ item, featured = false }: { item: NewsItem; featured?
       <div className="mt-4 grid gap-3 text-xs text-slate-300 md:grid-cols-2">
         <div className="rounded-xl border border-red-400/15 bg-red-400/10 p-3">
           <p className="font-semibold text-red-300">リスク</p>
-          <p className="mt-1 leading-5">{item.risk}</p>
+          <p className="mt-1 break-words leading-5 [overflow-wrap:anywhere]">{item.risk}</p>
         </div>
         <div className="rounded-xl border border-green-400/15 bg-green-400/10 p-3">
           <p className="font-semibold text-green-300">チャンス</p>
-          <p className="mt-1 leading-5">{item.opportunity}</p>
+          <p className="mt-1 break-words leading-5 [overflow-wrap:anywhere]">{item.opportunity}</p>
         </div>
       </div>
 
       <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs leading-5 text-slate-300">
+        <p className="break-words text-xs leading-5 text-slate-300 [overflow-wrap:anywhere]">
           <span className="font-semibold text-sky-200">AIコメント:</span> {item.aiComment}
         </p>
         {item.url ? (
@@ -105,7 +102,7 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-slate-950/45 p-3">
       <p className="text-xs font-semibold text-slate-400">{label}</p>
-      <p className="mt-1 text-sm leading-6 text-slate-200">{value}</p>
+      <p className="mt-1 break-words text-sm leading-6 text-slate-200 [overflow-wrap:anywhere]">{value}</p>
     </div>
   );
 }

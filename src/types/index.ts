@@ -65,6 +65,22 @@ export type NewsItem = {
   aiComment: string;
 };
 
+export type ScoreFactor = {
+  label: string;
+  points: number;
+  detail: string;
+  tone: "positive" | "negative" | "neutral";
+};
+
+export type StockScoreAnalysis = {
+  score: number;
+  status: WatchStatus;
+  factors: ScoreFactor[];
+  positivePoints: ScoreFactor[];
+  negativePoints: ScoreFactor[];
+  summary: string;
+};
+
 export type AiTask = {
   name: string;
   role: string;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport, watchlist } from "@/lib/mock-data";
-import { scoreStock, statusFromScore } from "@/lib/scoring";
+import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
 import { saveJobResult } from "@/lib/supabase";
 import type { AiJobResult, AiTask, DailyPrice, NewsItem, Sentiment, Stock, StockAnalysisResult } from "@/types";
 
@@ -109,7 +109,8 @@ async function buildStockAnalysis(stock: Stock, hasAllKeys: boolean): Promise<St
     if (!latest) throw new Error("No price data available.");
     const rawNews = await fetchNews(stock);
     const analyzedNews = await analyzeNews(rawNews, latest, stock);
-    const aiMarketScore = scoreStock(latest, analyzedNews);
+    const scoreAnalysis = analyzeStock(latest, analyzedNews);
+    const aiMarketScore = scoreAnalysis.score;
     const status = statusFromScore(aiMarketScore);
     return {
       stock,
@@ -122,9 +123,9 @@ async function buildStockAnalysis(stock: Stock, hasAllKeys: boolean): Promise<St
       report: {
         date: latest.date,
         market: buildMarketSummary(stock.ticker, latest),
-        watchlist: `${stock.ticker}は${status}判定です。価格、出来高、RSI、ニュース材料を確認しました。AIスコアは${aiMarketScore}点です。`,
+        watchlist: `${stock.ticker}は${status}判定です。${scoreAnalysis.summary}`,
         news: buildNewsSummary(analyzedNews),
-        decision: buildDecision(stock.ticker, aiMarketScore, latest),
+        decision: buildDecision(stock.ticker, aiMarketScore, latest, analyzedNews),
         tomorrow: buildTomorrowStrategy(stock.ticker, latest)
       },
       warning: stockData.warning
@@ -432,10 +433,13 @@ function buildNewsSummary(items: NewsItem[]) {
     .join("\n");
 }
 
-function buildDecision(ticker: string, score: number, price: DailyPrice) {
+function buildDecision(ticker: string, score: number, price: DailyPrice, news: NewsItem[] = []) {
+  const analysis = analyzeStock(price, news);
   const label = score >= 80 ? "Strong Buy寄り" : score >= 65 ? "Buy寄り" : score >= 50 ? "Watch" : score >= 35 ? "Caution" : "Sell/Danger";
   const caution = price.rsi >= 70 ? "ただしRSIが高く、短期の過熱感があります。" : "過熱感は強すぎず、出来高の継続確認が重要です。";
-  return `${ticker}のAI総合スコアは${score}点で、判定は${label}です。${caution}これは売買推奨ではなく、確認すべき材料の整理です。`;
+  const positives = analysis.positivePoints.slice(0, 3).map((item) => `${item.label} ${item.points > 0 ? "+" : ""}${item.points}`).join(" / ") || "強材料なし";
+  const negatives = analysis.negativePoints.slice(0, 3).map((item) => `${item.label} ${item.points}`).join(" / ") || "大きな弱材料なし";
+  return `${ticker}のAI総合スコアは${score}点で、判定は${label}です。${caution}\n強材料: ${positives}\n注意材料: ${negatives}\nこれは売買推奨ではなく、確認すべき材料の整理です。`;
 }
 
 function buildTomorrowStrategy(ticker: string, price: DailyPrice) {
@@ -446,7 +450,7 @@ function buildPortfolioReport(results: StockAnalysisResult[], aiMarketScore: num
   const date = results[0]?.price.date ?? nowJst();
   const summary = results.map((item) => `${item.stock.ticker}: ${item.status} / Score ${item.aiMarketScore} / $${item.price.close.toFixed(2)} / RSI ${item.price.rsi.toFixed(1)}`).join("\n");
   const newsSummary = results.map((item) => `【${item.stock.ticker}】\n${buildNewsSummary(item.news)}`).join("\n\n");
-  const decisions = results.map((item) => buildDecision(item.stock.ticker, item.aiMarketScore, item.price)).join("\n");
+  const decisions = results.map((item) => buildDecision(item.stock.ticker, item.aiMarketScore, item.price, item.news)).join("\n");
   return {
     date,
     market: `Watchlist全体のAI Market Scoreは${aiMarketScore}点です。対象銘柄は${results.map((item) => item.stock.ticker).join(", ")}です。`,

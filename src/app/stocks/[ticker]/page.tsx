@@ -7,6 +7,7 @@ import { DataTable } from "@/components/DataTable";
 import { StockChart } from "@/components/StockChart";
 import { resolvePriceSeries } from "@/lib/indicators";
 import { getPricesForTicker, watchlist } from "@/lib/mock-data";
+import { analyzeStock } from "@/lib/scoring";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import type { DailyPrice } from "@/types";
 
@@ -26,6 +27,8 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const chartPrices = mergedPrices;
   const tablePrices = mergedPrices.slice().reverse();
   const latest = mergedPrices[mergedPrices.length - 1];
+  const tickerNews = live?.news ?? [];
+  const scoreAnalysis = analyzeStock(latest, tickerNews);
   const sourceLabel = live ? resolvedPrices.source : item.stock.ticker === "RGTI" ? "Excel history" : "Local SIDU historical data";
   const detailItems = watchlist.filter((row) => Boolean(getPricesForTicker(row.stock.ticker)));
 
@@ -96,6 +99,23 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         <StockChart prices={chartPrices} ticker={item.stock.ticker} />
       </div>
 
+      <section className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <h3 className="text-lg font-bold text-slate-50">AI判定根拠</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{scoreAnalysis.summary}</p>
+          </div>
+          <div className="rounded-2xl border border-sky-300/25 bg-sky-300/10 px-4 py-3">
+            <p className="text-xs font-semibold text-sky-200">Advanced Score</p>
+            <p className="mt-1 text-3xl font-black text-sky-100">{scoreAnalysis.score}</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <ReasonList title="強材料" items={scoreAnalysis.positivePoints.slice(0, 4)} />
+          <ReasonList title="注意材料" items={scoreAnalysis.negativePoints.slice(0, 4)} />
+        </div>
+      </section>
+
       <section className="md:hidden">
         <div className="mb-3">
           <h3 className="text-base font-bold text-slate-50">日次データ</h3>
@@ -128,6 +148,27 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
             <PatternCell key="pattern" pattern={price.pattern} score={price.score} high20Breakout={price.high20Breakout} />
           ])}
         />
+      </div>
+    </div>
+  );
+}
+
+function ReasonList({ title, items }: { title: string; items: { label: string; points: number; detail: string }[] }) {
+  return (
+    <div className="rounded-xl bg-slate-950/55 p-3">
+      <p className="text-sm font-bold text-slate-100">{title}</p>
+      <div className="mt-3 space-y-3">
+        {items.length ? items.map((item) => (
+          <div key={item.label} className="border-t border-white/10 pt-3 first:border-t-0 first:pt-0">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-200">{item.label}</span>
+              <span className={item.points > 0 ? "text-sm font-bold text-green-300" : "text-sm font-bold text-red-300"}>
+                {item.points > 0 ? "+" : ""}{item.points}
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{item.detail}</p>
+          </div>
+        )) : <p className="text-sm text-slate-500">該当なし</p>}
       </div>
     </div>
   );

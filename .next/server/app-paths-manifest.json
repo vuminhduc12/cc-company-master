@@ -1,7 +1,7 @@
 {
-  "/stocks/[ticker]/page": "app/stocks/[ticker]/page.js",
-  "/page": "app/page.js",
-  "/watchlist/page": "app/watchlist/page.js",
+  "/reports/page": "app/reports/page.js",
   "/news/page": "app/news/page.js",
-  "/ai-employees/page": "app/ai-employees/page.js"
+  "/page": "app/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/stocks/[ticker]/page": "app/stocks/[ticker]/page.js"
 }

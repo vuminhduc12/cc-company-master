@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { StockChart } from "@/components/StockChart";
 import { latestPrice, resolvePriceSeries, volumeRatio } from "@/lib/indicators";
 import { aiTasks, news, prices, pricesByTicker, report, watchlist } from "@/lib/mock-data";
-import { scoreStock, statusFromScore } from "@/lib/scoring";
+import { analyzeStock, statusFromScore } from "@/lib/scoring";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 
 export default function DashboardPage() {
@@ -25,7 +25,8 @@ export default function DashboardPage() {
   const latest = chartPrices[chartPrices.length - 1] ?? baseLatest;
   const selectedNews = selectedLive?.news?.length ? selectedLive.news : news.filter((item) => item.ticker === selectedItem.stock.ticker);
   const liveNews = selectedNews.length > 0 ? selectedNews : news;
-  const score = selectedLive?.aiMarketScore ?? (selectedItem.stock.ticker === "RGTI" && jobResult ? jobResult.aiMarketScore : scoreStock(latest, liveNews));
+  const scoreAnalysis = analyzeStock(latest, liveNews);
+  const score = selectedLive?.aiMarketScore ?? (selectedItem.stock.ticker === "RGTI" && jobResult ? jobResult.aiMarketScore : scoreAnalysis.score);
   const status = selectedLive?.status ?? statusFromScore(score);
   const liveStatuses = watchlist.map((item) => jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker)?.status ?? item.status);
   const bullish = liveStatuses.filter((itemStatus) => itemStatus === "Strong Buy" || itemStatus === "Buy").length;
@@ -168,6 +169,16 @@ export default function DashboardPage() {
               {selectedLive?.warning ?? `${selectedItem.stock.ticker}はRSI ${latest.rsi.toFixed(2)}、出来高倍率 ${volumeRatio(latest).toFixed(2)}x です。MA20維持とニュース材料を確認してください。`}
             </p>
           </div>
+
+          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
+            <h3 className="font-semibold text-slate-50">判定根拠</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{scoreAnalysis.summary}</p>
+            <div className="mt-4 space-y-2">
+              {scoreAnalysis.factors.slice(0, 5).map((factor) => (
+                <ReasonRow key={factor.label} label={factor.label} points={factor.points} />
+              ))}
+            </div>
+          </div>
         </aside>
       </section>
 
@@ -194,6 +205,16 @@ export default function DashboardPage() {
           {liveTasks.map((task) => <AiEmployeeCard key={task.name} task={task} />)}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ReasonRow({ label, points }: { label: string; points: number }) {
+  const color = points > 0 ? "text-green-300" : points < 0 ? "text-red-300" : "text-slate-300";
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-950/55 px-3 py-2 text-sm">
+      <span className="text-slate-300">{label}</span>
+      <span className={`font-bold ${color}`}>{points > 0 ? "+" : ""}{points}</span>
     </div>
   );
 }
