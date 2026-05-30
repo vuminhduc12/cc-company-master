@@ -56,6 +56,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../src/app/margin-simulator/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/margin-simulator">> = Specific
+  const handler = {} as typeof import("../../src/app/margin-simulator/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../src/app/news/page.tsx
 {
   type __IsExpected<Specific extends AppPageConfig<"/news">> = Specific
@@ -114,6 +123,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/cron/daily-job">> = Specific
   const handler = {} as typeof import("../../src/app/api/cron/daily-job/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/stock-search/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/stock-search">> = Specific
+  const handler = {} as typeof import("../../src/app/api/stock-search/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

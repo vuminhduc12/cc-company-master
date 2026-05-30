@@ -168,10 +168,16 @@ async function fetchStockData(ticker: string): Promise<{ prices: DailyPrice[]; w
   const response = await fetch(url, { next: { revalidate: 0 } });
   if (!response.ok) throw new Error(`Stock API error: ${response.status}`);
 
-  const payload = await response.json() as { ["Time Series (Daily)"]?: Record<string, Record<string, string>>; Note?: string; Information?: string };
+  const payload = await response.json() as {
+    ["Time Series (Daily)"]?: Record<string, Record<string, string>>;
+    Note?: string;
+    Information?: string;
+    Error?: string;
+    ["Error Message"]?: string;
+  };
   const series = payload["Time Series (Daily)"];
   if (!series) {
-    const message = payload.Note ?? payload.Information ?? "Stock API response did not include daily prices.";
+    const message = payload.Note ?? payload.Information ?? payload.Error ?? payload["Error Message"] ?? "Stock API response did not include daily prices.";
     if (fallback && isAlphaVantageLimitMessage(message)) {
       return {
         prices: fallback,

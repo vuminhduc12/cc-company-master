@@ -7,6 +7,7 @@ const links = [
   ["/news", "News"],
   ["/ai-employees", "AI Employees"],
   ["/reports", "Reports"],
+  ["/margin-simulator", "Margin Simulator"],
   ["/settings", "Settings"]
 ];
 
