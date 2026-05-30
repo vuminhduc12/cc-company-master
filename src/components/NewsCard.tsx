@@ -3,24 +3,30 @@ import { StatusBadge } from "./StatusBadge";
 
 export function NewsCard({ item, featured = false }: { item: NewsItem; featured?: boolean }) {
   const summary = parseSummary(item.summary);
+  const tickerStyle = getTickerStyle(item.ticker);
   const sentimentStyle = {
-    Positive: "border-green-400/30 bg-green-400/5",
-    Neutral: "border-slate-400/20 bg-slate-900/75",
-    Negative: "border-red-400/30 bg-red-400/5"
+    Positive: "ring-green-400/15",
+    Neutral: "ring-slate-400/10",
+    Negative: "ring-red-400/15"
   }[item.sentiment];
 
   return (
-    <article className={`rounded-2xl border p-4 shadow-lg shadow-black/20 ${sentimentStyle} ${featured ? "lg:p-5" : ""}`}>
+    <article className={`relative min-w-0 overflow-hidden rounded-2xl border bg-slate-900/80 p-3 shadow-lg shadow-black/20 ring-1 sm:p-4 ${tickerStyle.card} ${sentimentStyle} ${featured ? "lg:p-5" : ""}`}>
+      <div className={`absolute inset-y-0 left-0 w-1.5 ${tickerStyle.rail}`} />
+      <div className={`absolute right-3 top-3 rounded-full border px-2.5 py-1 text-[11px] font-black tracking-[0.14em] sm:right-4 sm:top-4 sm:px-3 sm:text-xs sm:tracking-[0.18em] ${tickerStyle.watermark}`}>
+        {item.ticker}
+      </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
+        <div className="min-w-0 pr-14 sm:pr-20">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <span className={`rounded-full border px-2.5 py-1 font-bold ${tickerStyle.badge}`}>
+              {item.ticker} News
+            </span>
             <span>{item.source}</span>
             <span className="text-slate-600">•</span>
             <span>{item.publishedAt}</span>
-            <span className="text-slate-600">•</span>
-            <span>{item.ticker}</span>
           </div>
-          <h3 className={`mt-2 font-semibold leading-6 text-slate-50 ${featured ? "text-lg" : "text-base"}`}>
+          <h3 className={`mt-2 break-words font-semibold leading-6 text-slate-50 ${featured ? "text-base sm:text-lg" : "text-sm sm:text-base"}`}>
             {item.url ? (
               <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-sky-200">
                 {item.title}
@@ -29,15 +35,15 @@ export function NewsCard({ item, featured = false }: { item: NewsItem; featured?
           </h3>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="rounded-full border border-sky-300/30 bg-sky-300/10 px-2.5 py-1 text-xs font-bold text-sky-200">
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${tickerStyle.impact}`}>
             Impact {item.impactScore}/10
           </span>
           <StatusBadge value={item.sentiment} />
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/45 p-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-sky-300">AI要点</p>
+      <div className={`mt-4 rounded-xl border bg-slate-950/50 p-3 ${tickerStyle.panel}`}>
+        <p className={`text-xs font-semibold uppercase tracking-wide ${tickerStyle.label}`}>AI要点 / {item.ticker}</p>
         <p className="mt-2 text-sm leading-6 text-slate-100">{summary.point}</p>
       </div>
 
@@ -69,6 +75,30 @@ export function NewsCard({ item, featured = false }: { item: NewsItem; featured?
       </div>
     </article>
   );
+}
+
+function getTickerStyle(ticker: string) {
+  if (ticker === "SIDU") {
+    return {
+      card: "border-amber-300/25 bg-[linear-gradient(135deg,rgba(245,158,11,0.10),rgba(15,23,42,0.88)_38%)]",
+      rail: "bg-amber-400",
+      badge: "border-amber-300/40 bg-amber-300/15 text-amber-100",
+      impact: "border-amber-300/35 bg-amber-300/10 text-amber-100",
+      panel: "border-amber-300/20",
+      label: "text-amber-300",
+      watermark: "border-amber-300/30 bg-amber-300/10 text-amber-100"
+    };
+  }
+
+  return {
+    card: "border-sky-300/25 bg-[linear-gradient(135deg,rgba(56,189,248,0.10),rgba(15,23,42,0.88)_38%)]",
+    rail: "bg-sky-400",
+    badge: "border-sky-300/40 bg-sky-300/15 text-sky-100",
+    impact: "border-sky-300/35 bg-sky-300/10 text-sky-100",
+    panel: "border-sky-300/20",
+    label: "text-sky-300",
+    watermark: "border-sky-300/30 bg-sky-300/10 text-sky-100"
+  };
 }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {

@@ -10,12 +10,12 @@ function toNullableNumber(value: string) {
   return value === "" ? null : Number(value);
 }
 
-export const prices: DailyPrice[] = rgtiAnalysisData.split("\n").map((line) => {
+export const prices: DailyPrice[] = rgtiAnalysisData.split(/\\n|\n/).map((line) => {
   const [
     date,
-    open,
-    high,
-    low,
+    rawLow,
+    rawOpen,
+    rawHigh,
     close,
     changePercent,
     volume,
@@ -44,9 +44,9 @@ export const prices: DailyPrice[] = rgtiAnalysisData.split("\n").map((line) => {
 
   return {
     date,
-    open: toNumber(open),
-    high: toNumber(high),
-    low: toNumber(low),
+    open: toNumber(rawOpen),
+    high: toNumber(rawHigh),
+    low: toNumber(rawLow),
     close: toNumber(close),
     changePercent: toNumber(changePercent) * 100,
     volume: toNumber(volume),
@@ -75,6 +75,42 @@ export const prices: DailyPrice[] = rgtiAnalysisData.split("\n").map((line) => {
   };
 });
 
+const rgtiMay29: DailyPrice = {
+  date: "2026-05-29",
+  open: 26.45,
+  high: 26.56,
+  low: 24.44,
+  close: 25.54,
+  changePercent: -5.5124,
+  volume: 60755197,
+  volumeAverage20: 52698491,
+  volumeRatio: 1.152883,
+  intradayRangePercent: 8.3007,
+  rsi: 63.755732,
+  macd: 1.83109,
+  macdSignal: 1.567308,
+  macdHistogram: 0.263782,
+  macdDirection: "上昇",
+  rsiSignal: "強気圏",
+  high20Breakout: "",
+  ma5: 25.735,
+  ma20: 20.3065,
+  ma50: 17.678,
+  volumeAverage: 52698491,
+  closeAfter5Days: null,
+  changeAfter5Days: null,
+  closeAfter10Days: null,
+  changeAfter10Days: null,
+  score: 4,
+  pattern: "直近候補（未来未確定）",
+  comment: "5月29日データ反映",
+  source: "StockAnalysis reference"
+};
+
+if (!prices.some((price) => price.date === rgtiMay29.date)) {
+  prices.push(rgtiMay29);
+}
+
 function average(values: number[]) {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -96,17 +132,16 @@ function calculateRsiFromCloses(closes: number[]) {
 }
 
 function buildSiduPrices(): DailyPrice[] {
-  const baseRows = prices.slice(-220);
-  const rows = baseRows.map((price, index) => {
-    const wave = Math.sin(index / 7) * 0.018 + Math.cos(index / 17) * 0.012;
-    const eventMove = index === 154 ? 0.34 : index === 155 ? -0.13 : index === 186 ? 0.21 : 0;
-    const trend = index * 0.00035;
-    const close = Math.max(0.05, 0.16 + trend + wave + eventMove);
-    const open = Math.max(0.05, close * (1 - 0.018 + Math.sin(index / 5) * 0.012));
-    const high = Math.max(open, close) * (1.035 + Math.abs(Math.sin(index / 9)) * 0.035);
-    const low = Math.min(open, close) * (0.965 - Math.abs(Math.cos(index / 11)) * 0.018);
-    const volume = Math.round(3800000 + Math.abs(Math.sin(index / 6)) * 9000000 + (eventMove > 0 ? 42000000 : 0));
-    return { date: price.date, open, high, low, close, volume };
+  const rows = siduHistoricalRows.split("\n").map((line) => {
+    const [date, open, high, low, close, volume] = line.split("|");
+    return {
+      date,
+      open: Number(open),
+      high: Number(high),
+      low: Number(low),
+      close: Number(close),
+      volume: Number(volume)
+    };
   });
 
   return rows.map((row, index) => {
@@ -159,11 +194,62 @@ function buildSiduPrices(): DailyPrice[] {
       changeAfter10Days: null,
       score,
       pattern: score >= 6 ? "短期上昇候補" : score <= 2 ? "リスク監視" : "",
-      comment: "SIDU MVPダミーデータ。価格、出来高、RSI、MAを同じ形式で確認できます。",
-      source: "MVP synthetic data"
+      comment: "SIDU公開日足データをローカル化。Investing.com / Google Finance / StockAnalysisを参照。",
+      source: "Investing.com / Google Finance / StockAnalysis reference"
     };
   });
 }
+
+const siduHistoricalRows = `2026-03-19|2.18|2.31|2.11|2.29|3366411
+2026-03-20|2.29|2.47|2.21|2.31|9240176
+2026-03-23|2.36|2.60|2.17|2.51|10735131
+2026-03-24|2.46|2.62|2.30|2.39|7760135
+2026-03-25|2.46|3.15|2.45|2.84|28804058
+2026-03-26|2.76|2.86|2.55|2.70|13172447
+2026-03-27|2.64|2.65|2.25|2.27|9562100
+2026-03-30|2.32|2.38|2.06|2.15|6928040
+2026-03-31|2.19|2.42|2.19|2.32|8065333
+2026-04-01|2.25|2.33|2.02|2.10|12161203
+2026-04-02|2.01|3.20|2.00|3.09|66716751
+2026-04-06|3.00|3.96|2.91|3.67|64837987
+2026-04-07|3.36|4.20|3.33|3.79|50682138
+2026-04-08|4.25|4.27|3.41|3.64|41523137
+2026-04-09|3.57|3.85|3.33|3.34|20919291
+2026-04-10|3.45|4.30|3.44|4.25|48454206
+2026-04-13|3.92|4.95|3.68|4.93|36404929
+2026-04-14|5.02|5.59|4.80|5.31|43045241
+2026-04-15|5.15|5.40|4.56|4.88|29705891
+2026-04-16|4.64|5.99|4.56|5.95|41087255
+2026-04-17|5.64|5.86|5.25|5.35|25038938
+2026-04-20|4.86|4.86|4.05|4.34|45442822
+2026-04-21|4.37|4.41|3.68|3.75|42947123
+2026-04-22|4.03|4.41|3.92|4.06|25256245
+2026-04-23|3.99|4.06|3.60|3.71|17477477
+2026-04-24|3.73|3.76|3.18|3.42|22703647
+2026-04-27|3.32|3.46|3.13|3.35|12820126
+2026-04-28|3.21|3.30|3.07|3.08|10171998
+2026-04-29|3.05|3.12|2.87|3.10|10336975
+2026-04-30|3.12|3.38|3.05|3.28|13301576
+2026-05-01|3.35|3.50|3.15|3.38|12993236
+2026-05-04|3.30|3.45|3.07|3.09|10992631
+2026-05-05|3.11|3.18|2.91|2.95|9564403
+2026-05-06|2.98|3.38|2.93|3.27|14613634
+2026-05-07|3.23|3.34|2.94|2.95|12071911
+2026-05-08|3.02|3.45|2.99|3.41|23047130
+2026-05-11|3.54|3.95|3.45|3.74|35983497
+2026-05-12|3.46|3.75|3.11|3.32|20091501
+2026-05-13|3.35|3.45|3.23|3.26|13232015
+2026-05-14|3.30|3.82|3.19|3.66|25833368
+2026-05-15|3.39|4.20|3.36|4.01|35552066
+2026-05-18|4.29|4.35|3.61|3.91|29462738
+2026-05-19|3.71|3.77|3.40|3.60|17228275
+2026-05-20|3.68|3.95|3.46|3.85|18538319
+2026-05-21|3.77|4.18|3.73|4.13|21402442
+2026-05-22|4.19|5.22|4.15|5.12|40081783
+2026-05-26|5.37|6.64|5.00|6.20|59404912
+2026-05-27|6.76|6.79|5.58|6.09|58178148
+2026-05-28|5.07|5.29|4.77|5.18|51907962
+2026-05-29|4.93|5.00|4.38|4.91|35126595`;
 
 export const siduPrices = buildSiduPrices();
 export const pricesByTicker: Record<string, DailyPrice[]> = {
@@ -190,7 +276,9 @@ export const watchlist: WatchlistItem[] = [
 export const news: NewsItem[] = [
   { title: "RGTIの上昇パターン候補が直近データで発生", source: "Excel Pattern Sheet", publishedAt: latest.date, ticker: "RGTI", summary: `前日比 ${latest.changePercent.toFixed(2)}%、MACD ${latest.macdDirection}、出来高倍率 ${latest.volumeRatio.toFixed(2)}、RSI ${latest.rsi.toFixed(2)}。`, sentiment: "Positive", impactScore: 8, risk: "RSIが70近く、短期過熱に注意。", opportunity: "20日平均を上回る出来高が継続すれば上昇再開候補。", aiComment: "Buy寄り。ただし急騰後の押し目確認を優先。" },
   { title: `2023〜現在の分析データ ${prices.length} 行を反映`, source: "RGTI Rising Pattern", publishedAt: latest.date, ticker: "RGTI", summary: "Excelの計算データからOHLCV、RSI、MACD、移動平均、スコア、判定を取り込み済み。", sentiment: "Positive", impactScore: 7, risk: "過去パターンは将来リターンを保証しない。", opportunity: "類似条件の再現性を確認できる。", aiComment: "AI Market Scoreの補助材料として有効。" },
-  { title: "急騰後の利確売りと出来高低下を監視", source: "Risk Check", publishedAt: latest.date, ticker: "RGTI", summary: "出来高倍率とRSIの変化を日次で確認。", sentiment: "Neutral", impactScore: 6, risk: "出来高倍率が1.2倍を割るとWatchへ引き下げ。", opportunity: "27ドル台維持なら短期トレンド継続。", aiComment: "Caution要素も残るためポジションサイズ管理が必要。" }
+  { title: "急騰後の利確売りと出来高低下を監視", source: "Risk Check", publishedAt: latest.date, ticker: "RGTI", summary: "出来高倍率とRSIの変化を日次で確認。", sentiment: "Neutral", impactScore: 6, risk: "出来高倍率が1.2倍を割るとWatchへ引き下げ。", opportunity: "27ドル台維持なら短期トレンド継続。", aiComment: "Caution要素も残るためポジションサイズ管理が必要。" },
+  { title: "SIDUは大商い後の反落を確認、短期の荒い値動きに注意", source: "SIDU Historical Data", publishedAt: siduLatest.date, ticker: "SIDU", summary: `要点: SIDUは終値 $${siduLatest.close.toFixed(2)}、前日比 ${siduLatest.changePercent.toFixed(2)}%、出来高倍率 ${siduLatest.volumeRatio.toFixed(2)}。短期影響: 直近の出来高は高いが、反落日は利確売りの強さを確認。中期影響: MA20を上回る限り反発基調は残るが、資金調達ニュースには注意。`, sentiment: "Neutral", impactScore: 7, risk: "低位株特有の急変動、増資・希薄化、出来高急減を警戒。", opportunity: "出来高を伴って高値を再更新できれば短期資金流入の継続材料。", aiComment: "SIDUは値動きが速いため、RGTIよりもリスク管理と損切りラインを明確にする必要があります。" },
+  { title: "SIDUの20日高値更新パターンを監視", source: "Google Finance Style Watch", publishedAt: siduLatest.date, ticker: "SIDU", summary: `要点: 2026年5月後半に出来高急増と高値更新が複数回発生。短期影響: 買い材料が続けば再上昇候補。中期影響: ニュース材料の継続性とNASDAQ小型宇宙関連への資金流入を確認。`, sentiment: "Positive", impactScore: 6, risk: "急騰後は窓埋め・反落・流動性低下が起きやすい。", opportunity: "出来高が平均以上を維持し、終値がMA20上で推移すればWatchからBuy寄り。", aiComment: "ニュース単体ではなく、出来高と終値位置をセットで確認すると判断しやすいです。" }
 ];
 
 export const aiTasks: AiTask[] = [

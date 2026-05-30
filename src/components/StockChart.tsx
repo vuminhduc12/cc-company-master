@@ -30,9 +30,9 @@ export function StockChart({ prices, ticker = "RGTI" }: { prices: DailyPrice[]; 
   const totalVolume = visiblePrices.reduce((sum, price) => sum + price.volume, 0);
 
   return (
-    <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-900/75 p-5 shadow-xl shadow-black/25">
+    <div className="min-w-0 space-y-4 rounded-2xl border border-white/10 bg-slate-900/75 p-3 shadow-xl shadow-black/25 sm:p-5">
       <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-lg font-semibold text-slate-50">{ticker} Main Chart</h2>
           <p className="text-sm text-slate-400">価格 / 出来高 / RSI</p>
         </div>
@@ -53,37 +53,37 @@ export function StockChart({ prices, ticker = "RGTI" }: { prices: DailyPrice[]; 
         <ChartMetric label="期間騰落率" value={`${rangeChange >= 0 ? "+" : ""}${rangeChange.toFixed(2)}%`} tone={rangeChange >= 0 ? "up" : "down"} />
         <ChartMetric label="期間出来高合計" value={`${Math.round(totalVolume / 1000000).toLocaleString()}M`} tone="blue" />
       </div>
-      <ResponsiveContainer width="100%" height={360}>
+      <ResponsiveContainer width="100%" height={300}>
         <LineChart data={visiblePrices}>
           <CartesianGrid stroke="#1f2937" vertical={false} />
-          <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-          <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} domain={["dataMin - 2", "dataMax + 2"]} />
+          <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={formatDateTick} minTickGap={26} />
+          <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={["dataMin - 2", "dataMax + 2"]} width={42} />
           <Tooltip contentStyle={{ background: "#020617", border: "1px solid #334155", borderRadius: 12, color: "#f8fafc" }} />
           <Line type="monotone" dataKey="close" name="Close" stroke="#38bdf8" strokeWidth={3} dot={false} />
           <Line type="monotone" dataKey="ma20" name="MA20" stroke="#22c55e" strokeWidth={2} dot={false} />
           <Line type="monotone" dataKey="ma50" name="MA50" stroke="#f59e0b" strokeWidth={2} dot={false} />
         </LineChart>
       </ResponsiveContainer>
-      <div className="grid gap-4 lg:grid-cols-[1fr_0.7fr]">
-        <div className="rounded-xl bg-slate-950/50 p-4">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[1fr_0.7fr]">
+        <div className="min-w-0 rounded-xl bg-slate-950/50 p-3 sm:p-4">
           <p className="mb-3 text-sm font-semibold text-slate-200">Volume</p>
           <ResponsiveContainer width="100%" height={170}>
             <BarChart data={visiblePrices}>
               <CartesianGrid stroke="#1f2937" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-              <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
+              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={formatDateTick} minTickGap={26} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} width={42} />
               <Tooltip contentStyle={{ background: "#020617", border: "1px solid #334155", borderRadius: 12, color: "#f8fafc" }} formatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
               <Bar dataKey="volume" name="Volume" fill="#38bdf8" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="rounded-xl bg-slate-950/50 p-4">
+        <div className="min-w-0 rounded-xl bg-slate-950/50 p-3 sm:p-4">
           <p className="mb-3 text-sm font-semibold text-slate-200">RSI</p>
           <ResponsiveContainer width="100%" height={170}>
             <LineChart data={visiblePrices}>
               <CartesianGrid stroke="#1f2937" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-              <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={[30, 80]} />
+              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={formatDateTick} minTickGap={26} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={[30, 80]} width={34} />
               <Tooltip contentStyle={{ background: "#020617", border: "1px solid #334155", borderRadius: 12, color: "#f8fafc" }} />
               <Line type="monotone" dataKey="rsi" name="RSI" stroke="#facc15" strokeWidth={2} dot={false} />
             </LineChart>
@@ -92,6 +92,10 @@ export function StockChart({ prices, ticker = "RGTI" }: { prices: DailyPrice[]; 
       </div>
     </div>
   );
+}
+
+function formatDateTick(value: string) {
+  return value.slice(5);
 }
 
 function ChartMetric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "up" | "down" | "blue" }) {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { DataTable } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
+import { resolvePriceSeries } from "@/lib/indicators";
 import { pricesByTicker, watchlist } from "@/lib/mock-data";
 import { statusFromScore } from "@/lib/scoring";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
@@ -11,16 +12,25 @@ export default function WatchlistPage() {
   const jobResult = useAiJobResult();
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
+        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Portfolio Monitor</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">Watchlist</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              {jobResult ? `Last AI Run: ${jobResult.lastRun}` : "mock-dataを表示中"}。TickerをクリックするとStock Detailへ移動します。
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
+            Source: {jobResult ? "Supabase / latest AI result" : "mock-data"}
+          </div>
+        </div>
+      </div>
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
         <div>
-          <h2 className="text-2xl font-bold text-slate-50">Watchlist</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            {jobResult ? `Last AI Run: ${jobResult.lastRun}` : "mock-dataを表示中"}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-slate-900/75 px-4 py-3 text-sm text-slate-300">
-          Source: {jobResult ? "Supabase / latest AI result" : "mock-data"}
+          <h3 className="text-lg font-bold text-slate-50">銘柄一覧</h3>
+          <p className="mt-1 text-xs text-slate-500">保有情報、現在値、AIステータスを横並びで確認できます。</p>
         </div>
       </div>
       {jobResult?.error ? (
@@ -33,8 +43,11 @@ export default function WatchlistPage() {
         rows={watchlist.map((item) => {
           const hasDetail = Boolean(pricesByTicker[item.stock.ticker]);
           const live = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker);
-          const currentPrice = live?.price.close ?? item.currentPrice;
-          const previousClose = live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose;
+          const rowBasePrices = pricesByTicker[item.stock.ticker];
+          const rowResolved = rowBasePrices ? resolvePriceSeries(rowBasePrices, live?.prices, live?.price) : null;
+          const rowLatest = rowResolved?.prices[rowResolved.prices.length - 1];
+          const currentPrice = rowLatest?.close ?? live?.price.close ?? item.currentPrice;
+          const previousClose = rowResolved?.prices[rowResolved.prices.length - 2]?.close ?? (live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose);
           const change = previousClose > 0 ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
           const score = live?.aiMarketScore;
           const status = live?.status ?? (jobResult && item.stock.ticker === "RGTI" ? statusFromScore(jobResult.aiMarketScore) : item.status);

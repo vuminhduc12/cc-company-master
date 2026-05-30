@@ -1,4 +1,7 @@
 {
+  "/stocks/[ticker]/page": "app/stocks/[ticker]/page.js",
   "/page": "app/page.js",
-  "/stocks/[ticker]/page": "app/stocks/[ticker]/page.js"
+  "/watchlist/page": "app/watchlist/page.js",
+  "/news/page": "app/news/page.js",
+  "/ai-employees/page": "app/ai-employees/page.js"
 }

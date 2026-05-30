@@ -8,7 +8,7 @@ import { NewsCard } from "@/components/NewsCard";
 import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StockChart } from "@/components/StockChart";
-import { latestPrice, mergeLatestPrice, volumeRatio } from "@/lib/indicators";
+import { latestPrice, resolvePriceSeries, volumeRatio } from "@/lib/indicators";
 import { aiTasks, news, prices, pricesByTicker, report, watchlist } from "@/lib/mock-data";
 import { scoreStock, statusFromScore } from "@/lib/scoring";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
@@ -20,7 +20,8 @@ export default function DashboardPage() {
   const selectedItem = watchlist.find((item) => item.stock.ticker === selectedTicker) ?? watchlist[0];
   const selectedLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === selectedItem.stock.ticker);
   const selectedBasePrices = pricesByTicker[selectedItem.stock.ticker] ?? prices;
-  const chartPrices = selectedLive?.prices?.length ? selectedLive.prices : mergeLatestPrice(selectedBasePrices, selectedLive?.price ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null));
+  const resolvedPrices = resolvePriceSeries(selectedBasePrices, selectedLive?.prices, selectedLive?.price ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null));
+  const chartPrices = resolvedPrices.prices;
   const latest = chartPrices[chartPrices.length - 1] ?? baseLatest;
   const selectedNews = selectedLive?.news?.length ? selectedLive.news : news.filter((item) => item.ticker === selectedItem.stock.ticker);
   const liveNews = selectedNews.length > 0 ? selectedNews : news;
@@ -34,7 +35,37 @@ export default function DashboardPage() {
   const liveReport = jobResult?.report ?? report;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-7">
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl shadow-black/30 ring-1 ring-white/5">
+        <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="min-w-0 p-4 sm:p-7">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-sky-200">Live Desk</span>
+              <StatusBadge value={status} />
+            </div>
+            <h2 className="mt-4 text-2xl font-black leading-tight tracking-tight text-slate-50 sm:mt-5 sm:text-4xl">
+              {selectedItem.stock.ticker}を中心に、価格・ニュース・AI判断を一画面で確認
+            </h2>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
+              左で監視銘柄を選び、中央のチャートで値動き、右のAI判断でリスクとチャンスを確認できます。RGTI / SIDUは詳細ページにも遷移できます。
+            </p>
+          </div>
+          <div className="min-w-0 border-t border-white/10 bg-slate-950/45 p-4 sm:p-7 lg:border-l lg:border-t-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Selected Stock</p>
+            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-4xl font-black text-slate-50 sm:text-5xl">{selectedItem.stock.ticker}</p>
+                <p className="mt-2 text-sm text-slate-400">{selectedItem.stock.companyName}</p>
+              </div>
+              <div className={latest.changePercent >= 0 ? "text-left text-sky-300 sm:text-right" : "text-left text-red-300 sm:text-right"}>
+                <p className="text-3xl font-black tabular-nums">${latest.close.toFixed(2)}</p>
+                <p className="mt-1 text-sm font-bold">{latest.changePercent >= 0 ? "+" : ""}{latest.changePercent.toFixed(2)}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-5">
         <StatCard label="Total Watchlist" value={watchlist.length} />
         <StatCard label="Bullish Stocks" value={bullish} tone="green" />
@@ -60,16 +91,24 @@ export default function DashboardPage() {
           AI Job Warning: {jobResult.warning}
         </section>
       ) : null}
+      {resolvedPrices.rejectedLive ? (
+        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
+          Data Warning: APIから取得した{selectedItem.stock.ticker}価格がローカル検証済み履歴と大きく異なるため、画面ではローカル履歴を優先表示しています。
+        </section>
+      ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[340px_1fr_360px]">
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-50">Watchlist</h2>
+      <section className="grid min-w-0 gap-5 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          <SectionTitle title="Watchlist" note="銘柄をクリックすると中央の分析が切り替わります" />
           <DataTable
             headers={["Ticker", "Price", "Chg", "Status"]}
             rows={watchlist.map((item) => {
               const live = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker);
-              const currentPrice = live?.price.close ?? item.currentPrice;
-              const previousClose = live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose;
+              const rowBasePrices = pricesByTicker[item.stock.ticker];
+              const rowResolved = rowBasePrices ? resolvePriceSeries(rowBasePrices, live?.prices, live?.price) : null;
+              const rowLatest = rowResolved?.prices[rowResolved.prices.length - 1];
+              const currentPrice = rowLatest?.close ?? live?.price.close ?? item.currentPrice;
+              const previousClose = rowResolved?.prices[rowResolved.prices.length - 2]?.close ?? (live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose);
               const change = previousClose > 0 ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
               const hasDetail = Boolean(pricesByTicker[item.stock.ticker]);
               return [
@@ -92,14 +131,16 @@ export default function DashboardPage() {
           />
         </div>
 
-        <StockChart prices={chartPrices} ticker={selectedItem.stock.ticker} />
+        <div className="min-w-0">
+          <StockChart prices={chartPrices} ticker={selectedItem.stock.ticker} />
+        </div>
 
-        <aside className="space-y-4">
+        <aside className="min-w-0 space-y-4">
           <div className="rounded-2xl border border-sky-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/25">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <p className="text-sm text-slate-400">{selectedItem.stock.ticker} / {selectedItem.stock.companyName}</p>
-                <p className="mt-2 text-4xl font-bold text-slate-50">${latest.close.toFixed(2)}</p>
+                <p className="mt-2 text-3xl font-bold text-slate-50 sm:text-4xl">${latest.close.toFixed(2)}</p>
               </div>
               <StatusBadge value={status} />
             </div>
@@ -130,15 +171,15 @@ export default function DashboardPage() {
         </aside>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <h2 className="mb-4 text-lg font-semibold text-slate-50">AI News Analysis</h2>
+      <section className="grid min-w-0 gap-5 xl:grid-cols-3">
+        <div className="min-w-0 xl:col-span-2">
+          <SectionTitle title="AI News Analysis" note="選択中の銘柄に関係するニュースを優先表示" />
           <div className="grid gap-4 lg:grid-cols-2">
             {liveNews.slice(0, 2).map((item) => <NewsCard key={`${item.ticker}-${item.title}`} item={item} />)}
           </div>
         </div>
         <div>
-          <h2 className="mb-4 text-lg font-semibold text-slate-50">Daily Report Summary</h2>
+          <SectionTitle title="Daily Report Summary" note="今日の結論と明日の確認ポイント" />
           <div className="rounded-2xl border border-white/10 bg-slate-900/75 p-5 shadow-lg shadow-black/20">
             <p className="text-xs text-slate-400">{liveReport.date}</p>
             <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-200">{selectedLive?.report.decision ?? liveReport.decision}</p>
@@ -148,11 +189,20 @@ export default function DashboardPage() {
       </section>
 
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-slate-50">AI Employees Task Status</h2>
+        <SectionTitle title="AI Employees Task Status" note="データ取得・ニュース分析・リスク確認の実行状況" />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {liveTasks.map((task) => <AiEmployeeCard key={task.name} task={task} />)}
         </div>
       </section>
+    </div>
+  );
+}
+
+function SectionTitle({ title, note }: { title: string; note: string }) {
+  return (
+    <div className="mb-4">
+      <h2 className="text-lg font-bold text-slate-50">{title}</h2>
+      <p className="mt-1 text-xs text-slate-500">{note}</p>
     </div>
   );
 }

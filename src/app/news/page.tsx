@@ -11,22 +11,27 @@ export default function NewsPage() {
   const positiveCount = items.filter((item) => item.sentiment === "Positive").length;
   const negativeCount = items.filter((item) => item.sentiment === "Negative").length;
   const averageImpact = items.length > 0 ? items.reduce((sum, item) => sum + item.impactScore, 0) / items.length : 0;
+  const rgtiCount = items.filter((item) => item.ticker === "RGTI").length;
+  const siduCount = items.filter((item) => item.ticker === "SIDU").length;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-50">AIニュース分析</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            {jobResult ? `海外ニュースを日本語で分析 / 最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <a className="rounded-full border border-white/10 bg-slate-900/75 px-4 py-2 text-sm font-semibold text-sky-200 hover:bg-slate-800" href="https://www.google.com/finance/quote/RGTI:NASDAQ" target="_blank" rel="noreferrer">
-            Google Financeで確認 ↗
-          </a>
-          <div className="rounded-full border border-white/10 bg-slate-900/75 px-4 py-2 text-sm text-slate-300">
-            {jobResult ? "Supabase / 最新AI分析" : "mock-data"}
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">News Intelligence</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">AIニュース分析</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              {jobResult ? `海外ニュースを日本語で分析 / 最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}。RGTIはブルー、SIDUはゴールドで表示します。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/20" href="https://www.google.com/finance/quote/RGTI:NASDAQ" target="_blank" rel="noreferrer">
+              Google Financeで確認 ↗
+            </a>
+            <div className="rounded-full border border-white/10 bg-slate-950/55 px-4 py-2 text-sm text-slate-300">
+              {jobResult ? "Supabase / 最新AI分析" : "mock-data"}
+            </div>
           </div>
         </div>
       </div>
@@ -43,11 +48,35 @@ export default function NewsPage() {
         <Metric label="平均影響度" value={`${averageImpact.toFixed(1)}/10`} tone="blue" />
       </section>
 
+      <section className="grid gap-3 md:grid-cols-2">
+        <TickerSummary ticker="RGTI" name="Rigetti Computing" count={rgtiCount} tone="sky" />
+        <TickerSummary ticker="SIDU" name="Sidus Space" count={siduCount} tone="amber" />
+      </section>
+
       {featured ? <NewsCard item={featured} featured /> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {items.slice(1).map((item) => <NewsCard key={`${item.publishedAt}-${item.title}`} item={item} />)}
       </div>
+    </div>
+  );
+}
+
+function TickerSummary({ ticker, name, count, tone }: { ticker: string; name: string; count: number; tone: "sky" | "amber" }) {
+  const style = tone === "amber"
+    ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
+    : "border-sky-300/25 bg-sky-300/10 text-sky-100";
+
+  return (
+    <div className={`rounded-2xl border p-4 ${style}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.24em] opacity-75">{ticker}</p>
+          <p className="mt-1 text-sm text-slate-200">{name}</p>
+        </div>
+        <p className="text-2xl font-black">{count}</p>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">この色のニュースカードが{ticker}関連です。</p>
     </div>
   );
 }
