@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport, watchlist } from "@/lib/mock-data";
 import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
+import { fetchStockData } from "@/lib/stock-data";
 import { saveJobResult } from "@/lib/supabase";
 import type { AiJobResult, AiTask, DailyPrice, NewsItem, Sentiment, Stock, StockAnalysisResult } from "@/types";
 
@@ -26,10 +27,10 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   const authError = authorize(request, source);
   if (authError) return authError;
 
-  const hasAllKeys = Boolean(process.env.OPENAI_API_KEY && process.env.STOCK_API_KEY && process.env.NEWS_API_KEY);
-  if (source === "cron" && !hasAllKeys) {
+  const hasAiKeys = Boolean(process.env.OPENAI_API_KEY && process.env.NEWS_API_KEY);
+  if (source === "cron" && !hasAiKeys) {
     return NextResponse.json(
-      buildErrorResult("API keys are not configured. Cron job skipped.", "APIキー未設定のため自動実行をスキップしました。"),
+      buildErrorResult("AI/news API keys are not configured. Cron job skipped.", "OPENAI_API_KEYまたはNEWS_API_KEY未設定のため自動実行をスキップしました。株価はYahoo Finance優先で取得するためSTOCK_API_KEYは任意です。"),
       { status: 412 }
     );
   }
@@ -37,13 +38,10 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   try {
     const lastRun = nowJst();
     const nextRun = nextRunJst();
-    const targets = watchlist.filter((item) => Boolean(getPricesForTicker(item.stock.ticker)));
+    const targets = watchlist;
     const stockResults: StockAnalysisResult[] = [];
-    for (const [index, item] of targets.entries()) {
-      if (index > 0 && process.env.STOCK_API_KEY) {
-        await sleep(1300);
-      }
-      stockResults.push(await buildStockAnalysis(item.stock, hasAllKeys));
+    for (const item of targets) {
+      stockResults.push(await buildStockAnalysis(item.stock, hasAiKeys));
     }
     const successfulResults = stockResults.filter((item) => !item.error);
     if (successfulResults.length === 0) {
@@ -57,7 +55,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     const tasks = buildTasks(lastRun, nextRun, successfulResults, stockResults);
     const result: AiJobResult = {
       ok: true,
-      mode: hasAllKeys ? "live" : "mock",
+      mode: successfulResults.every((item) => item.warning?.includes("ローカル履歴データ")) ? "mock" : "live",
       status: stockResults.some((item) => item.error) ? "Error" : "Completed",
       lastRun,
       nextRun,
@@ -68,7 +66,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
       stocks: stockResults,
       tasks,
       report: buildPortfolioReport(successfulResults, aiMarketScore, nextRun),
-      warning: buildWarning(hasAllKeys, stockResults)
+      warning: buildWarning(hasAiKeys, stockResults)
     };
     const saveResult = await saveJobResult(result);
     if (!saveResult.saved && saveResult.reason) {
@@ -101,7 +99,7 @@ function authorize(request: NextRequest, source: "cron" | "manual") {
   return NextResponse.json(buildErrorResult("Invalid CRON_SECRET."), { status: 401 });
 }
 
-async function buildStockAnalysis(stock: Stock, hasAllKeys: boolean): Promise<StockAnalysisResult> {
+async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean): Promise<StockAnalysisResult> {
   try {
     const stockData = await fetchStockData(stock.ticker);
     const priceData = stockData.prices;
@@ -133,7 +131,7 @@ async function buildStockAnalysis(stock: Stock, hasAllKeys: boolean): Promise<St
   } catch (error) {
     const fallbackPrices = getPricesForTicker(stock.ticker);
     const fallbackPrice = fallbackPrices?.[fallbackPrices.length - 1] ?? prices[prices.length - 1];
-    const fallbackNews = hasAllKeys ? [] : mockNews.filter((item) => item.ticker === stock.ticker || stock.ticker === "RGTI");
+    const fallbackNews = hasAiKeys ? [] : mockNews.filter((item) => item.ticker === stock.ticker || stock.ticker === "RGTI");
     const message = error instanceof Error ? error.message : "Unknown error";
     return {
       stock,
@@ -154,105 +152,6 @@ async function buildStockAnalysis(stock: Stock, hasAllKeys: boolean): Promise<St
       error: message
     };
   }
-}
-
-async function fetchStockData(ticker: string): Promise<{ prices: DailyPrice[]; warning?: string }> {
-  const key = process.env.STOCK_API_KEY;
-  const fallback = getPricesForTicker(ticker);
-  if (!key) {
-    if (fallback) return { prices: fallback };
-    throw new Error(`${ticker} mock price data is not available.`);
-  }
-
-  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${ticker}&apikey=${key}&outputsize=full`;
-  const response = await fetch(url, { next: { revalidate: 0 } });
-  if (!response.ok) throw new Error(`Stock API error: ${response.status}`);
-
-  const payload = await response.json() as {
-    ["Time Series (Daily)"]?: Record<string, Record<string, string>>;
-    Note?: string;
-    Information?: string;
-    Error?: string;
-    ["Error Message"]?: string;
-  };
-  const series = payload["Time Series (Daily)"];
-  if (!series) {
-    const message = payload.Note ?? payload.Information ?? payload.Error ?? payload["Error Message"] ?? "Stock API response did not include daily prices.";
-    if (fallback && isAlphaVantageLimitMessage(message)) {
-      return {
-        prices: fallback,
-        warning: `${ticker}: Alpha Vantage無料枠の制限に達したため、ローカル履歴データを表示しています。時間を空けて再実行してください。`
-      };
-    }
-    if (fallback) {
-      return {
-        prices: fallback,
-        warning: `${ticker}: 株価APIから最新データを取得できなかったため、ローカル履歴データを表示しています。理由: ${message}`
-      };
-    }
-    throw new Error(message);
-  }
-
-  const rows = Object.entries(series)
-    .reverse()
-    .map(([date, row]) => ({
-      date,
-      open: Number(row["1. open"]),
-      high: Number(row["2. high"]),
-      low: Number(row["3. low"]),
-      close: Number(row["4. close"]),
-      volume: Number(row["5. volume"])
-    }));
-
-  return { prices: rows.map((row, index) => {
-    const closes = rows.slice(0, index + 1).map((item) => item.close);
-    const volumes = rows.slice(Math.max(0, index - 19), index + 1).map((item) => item.volume);
-    const previous = rows[index - 1]?.close ?? row.close;
-    const macd = average(closes.slice(-12)) - average(closes.slice(-26));
-    const previousMacd = index > 0 ? average(rows.slice(0, index).map((item) => item.close).slice(-12)) - average(rows.slice(0, index).map((item) => item.close).slice(-26)) : macd;
-    const ma5 = average(closes.slice(-5));
-    const ma20 = average(closes.slice(-20));
-    const ma50 = average(closes.slice(-50));
-    const volumeAverage20 = average(volumes);
-    const volumeRatio = volumeAverage20 > 0 ? row.volume / volumeAverage20 : 0;
-    const rsi = calculateRsi(closes);
-    const high20Breakout = row.close >= Math.max(...closes.slice(-20)) ? "20日高値更新" : "";
-    const macdDirection = macd >= previousMacd ? "上昇" : "低下";
-    const score = [
-      row.close > ma20,
-      ma20 > ma50,
-      volumeRatio >= 1.2,
-      rsi >= 40 && rsi <= 70,
-      macdDirection === "上昇",
-      Boolean(high20Breakout)
-    ].filter(Boolean).length;
-    return {
-      ...row,
-      changePercent: previous > 0 ? ((row.close - previous) / previous) * 100 : 0,
-      volumeAverage20,
-      volumeRatio,
-      intradayRangePercent: row.close > 0 ? ((row.high - row.low) / row.close) * 100 : 0,
-      rsi,
-      macd,
-      macdSignal: previousMacd,
-      macdHistogram: macd - previousMacd,
-      macdDirection,
-      rsiSignal: rsi >= 70 ? "過熱" : rsi >= 55 ? "強気圏" : rsi <= 35 ? "弱気圏" : "中立",
-      high20Breakout,
-      ma5,
-      ma20,
-      ma50,
-      volumeAverage: volumeAverage20,
-      closeAfter5Days: null,
-      changeAfter5Days: null,
-      closeAfter10Days: null,
-      changeAfter10Days: null,
-      score,
-      pattern: score >= 5 ? "上昇候補" : score <= 2 ? "リスク監視" : "",
-      comment: "",
-      source: "Alpha Vantage"
-    };
-  }) };
 }
 
 async function fetchNews(stock: Stock): Promise<NewsItem[]> {
@@ -467,9 +366,9 @@ function buildPortfolioReport(results: StockAnalysisResult[], aiMarketScore: num
   };
 }
 
-function buildWarning(hasAllKeys: boolean, results: StockAnalysisResult[]) {
+function buildWarning(hasAiKeys: boolean, results: StockAnalysisResult[]) {
   const warnings = [];
-  if (!hasAllKeys) warnings.push("APIキー未設定のためmock-dataで実行しました。");
+  if (!hasAiKeys) warnings.push("OPENAI_API_KEYまたはNEWS_API_KEY未設定のため、ニュース分析はmock-dataまたはルールベースで実行しました。");
   const stockWarnings = results.flatMap((item) => item.warning ? [`${item.stock.ticker}: ${item.warning}`] : []);
   warnings.push(...stockWarnings);
   const failed = results.filter((item) => item.error);
@@ -511,38 +410,9 @@ function mockErrorTasks(lastRun: string, nextRun: string, error: string): AiTask
   }));
 }
 
-function calculateRsi(closes: number[]) {
-  const target = closes.slice(-15);
-  if (target.length < 2) return 50;
-  let gains = 0;
-  let losses = 0;
-  for (let index = 1; index < target.length; index += 1) {
-    const diff = target[index] - target[index - 1];
-    if (diff >= 0) gains += diff;
-    else losses += Math.abs(diff);
-  }
-  if (losses === 0) return 70;
-  const rs = gains / losses;
-  return 100 - (100 / (1 + rs));
-}
-
-function average(values: number[]) {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
 function clamp(value: number, min: number, max: number) {
   if (Number.isNaN(value)) return min;
   return Math.max(min, Math.min(max, value));
-}
-
-function isAlphaVantageLimitMessage(message: string) {
-  const text = message.toLowerCase();
-  return text.includes("alpha vantage") || text.includes("free api requests") || text.includes("rate limit") || text.includes("premium");
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function nowJst() {

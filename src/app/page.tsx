@@ -186,7 +186,7 @@ export default function DashboardPage() {
         <div className="min-w-0 xl:col-span-2">
           <SectionTitle title="AI News Analysis" note="選択中の銘柄に関係するニュースを優先表示" />
           <div className="grid gap-4 lg:grid-cols-2">
-            {liveNews.slice(0, 2).map((item) => <NewsCard key={`${item.ticker}-${item.title}`} item={item} />)}
+            {liveNews.slice(0, 2).map((item, index) => <NewsCard key={`${item.ticker}-${item.publishedAt}-${item.url ?? item.title}-${index}`} item={item} />)}
           </div>
         </div>
         <div>

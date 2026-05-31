@@ -56,7 +56,7 @@ export default function NewsPage() {
       {featured ? <NewsCard item={featured} featured /> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {items.slice(1).map((item) => <NewsCard key={`${item.publishedAt}-${item.title}`} item={item} />)}
+        {items.slice(1).map((item, index) => <NewsCard key={newsKey(item, index + 1)} item={item} />)}
       </div>
     </div>
   );
@@ -95,4 +95,8 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
       <p className={`mt-1 text-xl font-bold ${color}`}>{value}</p>
     </div>
   );
+}
+
+function newsKey(item: { publishedAt: string; ticker: string; title: string; url?: string }, index: number) {
+  return `${item.ticker}-${item.publishedAt}-${item.url ?? item.title}-${index}`;
 }

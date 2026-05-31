@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPricesForTicker, news as mockNews, watchlist } from "@/lib/mock-data";
+import { news as mockNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
+import { fetchStockData } from "@/lib/stock-data";
 import type { DailyPrice, NewsItem, Stock, WatchStatus } from "@/types";
 
 type TradeSide = "auto" | "margin_buy" | "short_sell";
@@ -78,174 +79,6 @@ function resolveStock(ticker: string): Stock {
     companyName: ticker,
     sector: "Unknown",
     exchange: ticker.includes(".") ? "Local" : "NASDAQ/NYSE"
-  };
-}
-
-async function fetchStockData(ticker: string): Promise<{ prices: DailyPrice[]; mode: "live" | "mock"; warning?: string }> {
-  const fallback = getPricesForTicker(ticker);
-  const key = process.env.STOCK_API_KEY;
-  if (!key) {
-    if (fallback) return { prices: fallback, mode: "mock", warning: "STOCK_API_KEY未設定のため、ローカルデータを表示しています。" };
-    if (isJapaneseTicker(ticker)) {
-      return fetchYahooFinanceStockData(ticker, "STOCK_API_KEY未設定のため、日本株はYahoo Financeから取得しました。");
-    }
-    throw new Error("STOCK_API_KEYが未設定です。この銘柄はローカルデータがないため取得できません。");
-  }
-
-  const apiSymbol = normalizeAlphaVantageSymbol(ticker);
-  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(apiSymbol)}&apikey=${key}&outputsize=compact`;
-  const response = await fetch(url, { next: { revalidate: 0 } });
-  if (!response.ok) throw new Error(`Stock API error: ${response.status}`);
-  const payload = await response.json() as {
-    ["Time Series (Daily)"]?: Record<string, Record<string, string>>;
-    Note?: string;
-    Information?: string;
-    Error?: string;
-    ["Error Message"]?: string;
-  };
-  const series = payload["Time Series (Daily)"];
-  if (!series) {
-    const message = normalizeStockApiMessage(payload.Note ?? payload.Information ?? payload.Error ?? payload["Error Message"], ticker, apiSymbol);
-    if (isJapaneseTicker(ticker)) {
-      try {
-        return await fetchYahooFinanceStockData(ticker, `${message} 代替データソースとしてYahoo Financeから取得しました。`);
-      } catch {
-        throw new Error(`${message} Yahoo Financeでも取得できませんでした。`);
-      }
-    }
-    if (fallback) {
-      return { prices: fallback, mode: "mock", warning: `${message} ローカルデータを表示しています。` };
-    }
-    throw new Error(message);
-  }
-
-  const rows = Object.entries(series).reverse().map(([date, row]) => ({
-    date,
-    open: Number(row["1. open"]),
-    high: Number(row["2. high"]),
-    low: Number(row["3. low"]),
-    close: Number(row["4. close"]),
-    volume: Number(row["5. volume"])
-  }));
-
-  return {
-    prices: rows.map((row, index) => buildDailyPrice(rows, row, index, "Alpha Vantage")),
-    mode: "live",
-    warning: apiSymbol !== ticker ? `${ticker} は日本株コードとして ${apiSymbol} に変換して取得しました。` : undefined
-  };
-}
-
-function normalizeAlphaVantageSymbol(ticker: string) {
-  if (/^\d{4}$/.test(ticker)) return `${ticker}.T`;
-  return ticker;
-}
-
-function isJapaneseTicker(ticker: string) {
-  return /^\d{4}$/.test(ticker) || /^\d{4}\.T$/i.test(ticker) || /^\d{4}\.JP$/i.test(ticker);
-}
-
-function normalizeYahooSymbol(ticker: string) {
-  if (/^\d{4}$/.test(ticker)) return `${ticker}.T`;
-  if (/^\d{4}\.JP$/i.test(ticker)) return ticker.replace(/\.JP$/i, ".T");
-  return ticker;
-}
-
-async function fetchYahooFinanceStockData(ticker: string, warning: string): Promise<{ prices: DailyPrice[]; mode: "live"; warning?: string }> {
-  const symbol = normalizeYahooSymbol(ticker);
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=6mo&interval=1d`;
-  const response = await fetch(url, {
-    headers: { "user-agent": "Mozilla/5.0" },
-    next: { revalidate: 0 }
-  });
-  if (!response.ok) throw new Error(`Yahoo Finance API error: ${response.status}`);
-  const payload = await response.json() as {
-    chart?: {
-      result?: Array<{
-        timestamp?: number[];
-        indicators?: {
-          quote?: Array<{
-            open?: Array<number | null>;
-            high?: Array<number | null>;
-            low?: Array<number | null>;
-            close?: Array<number | null>;
-            volume?: Array<number | null>;
-          }>;
-        };
-      }>;
-      error?: { description?: string };
-    };
-  };
-  const result = payload.chart?.result?.[0];
-  const quote = result?.indicators?.quote?.[0];
-  if (!result?.timestamp || !quote) {
-    throw new Error(`${ticker}: Yahoo Financeの日足データを取得できませんでした。${payload.chart?.error?.description ?? ""}`);
-  }
-  const rows = result.timestamp.map((timestamp, index) => ({
-    date: new Date(timestamp * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" }),
-    open: Number(quote.open?.[index]),
-    high: Number(quote.high?.[index]),
-    low: Number(quote.low?.[index]),
-    close: Number(quote.close?.[index]),
-    volume: Number(quote.volume?.[index] ?? 0)
-  })).filter((row) => row.date && Number.isFinite(row.close) && row.close > 0);
-  if (rows.length === 0) throw new Error(`${ticker}: Yahoo Financeのレスポンスに有効な日足データがありません。`);
-  const compactRows = rows.slice(-120);
-  return {
-    prices: compactRows.map((row, index) => buildDailyPrice(compactRows, row, index, "Yahoo Finance")),
-    mode: "live",
-    warning: `${warning} 取得シンボル: ${symbol}`
-  };
-}
-
-function buildDailyPrice(rows: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>, row: { date: string; open: number; high: number; low: number; close: number; volume: number }, index: number, source: string): DailyPrice {
-  const closes = rows.slice(0, index + 1).map((item) => item.close);
-  const previousCloses = rows.slice(0, index).map((item) => item.close);
-  const volumes = rows.slice(Math.max(0, index - 19), index + 1).map((item) => item.volume);
-  const previous = rows[index - 1]?.close ?? row.close;
-  const ma5 = average(closes.slice(-5));
-  const ma20 = average(closes.slice(-20));
-  const ma50 = average(closes.slice(-50));
-  const volumeAverage20 = average(volumes);
-  const macd = average(closes.slice(-12)) - average(closes.slice(-26));
-  const previousMacd = index > 0 ? average(previousCloses.slice(-12)) - average(previousCloses.slice(-26)) : macd;
-  const rsi = calculateRsi(closes);
-  const volumeRatio = volumeAverage20 > 0 ? row.volume / volumeAverage20 : 0;
-  const macdDirection = macd >= previousMacd ? "上昇" : "低下";
-  const high20Breakout = row.close >= Math.max(...closes.slice(-20)) ? "20日高値更新" : "";
-  const score = [
-    row.close > ma20,
-    ma20 > ma50,
-    volumeRatio >= 1.2,
-    rsi >= 40 && rsi <= 70,
-    macdDirection === "上昇",
-    Boolean(high20Breakout)
-  ].filter(Boolean).length;
-
-  return {
-    ...row,
-    changePercent: previous > 0 ? ((row.close - previous) / previous) * 100 : 0,
-    volumeAverage20,
-    volumeRatio,
-    intradayRangePercent: row.close > 0 ? ((row.high - row.low) / row.close) * 100 : 0,
-    rsi,
-    macd,
-    macdSignal: previousMacd,
-    macdHistogram: macd - previousMacd,
-    macdDirection,
-    rsiSignal: rsi >= 70 ? "過熱" : rsi >= 55 ? "強気圏" : rsi <= 35 ? "弱気圏" : "中立",
-    high20Breakout,
-    ma5,
-    ma20,
-    ma50,
-    volumeAverage: volumeAverage20,
-    closeAfter5Days: null,
-    changeAfter5Days: null,
-    closeAfter10Days: null,
-    changeAfter10Days: null,
-    score,
-    pattern: score >= 5 ? "上昇候補" : score <= 2 ? "リスク監視" : "",
-    comment: "",
-    source
   };
 }
 
@@ -350,44 +183,7 @@ async function refineEntryPlanWithAi(stock: Stock, price: DailyPrice, news: News
   }
 }
 
-function calculateRsi(closes: number[]) {
-  const target = closes.slice(-15);
-  if (target.length < 2) return 50;
-  let gains = 0;
-  let losses = 0;
-  for (let index = 1; index < target.length; index += 1) {
-    const diff = target[index] - target[index - 1];
-    if (diff >= 0) gains += diff;
-    else losses += Math.abs(diff);
-  }
-  if (losses === 0) return 70;
-  const rs = gains / losses;
-  return 100 - (100 / (1 + rs));
-}
-
-function average(values: number[]) {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
 function clamp(value: number, min: number, max: number) {
   if (Number.isNaN(value)) return min;
   return Math.max(min, Math.min(max, value));
-}
-
-function normalizeStockApiMessage(message: string | undefined, ticker: string, apiSymbol: string) {
-  if (!message) {
-    return `${ticker}: 株価APIから日足データを取得できませんでした。実際に試したシンボルは ${apiSymbol} です。ティッカー、APIキー、無料枠の上限を確認してください。`;
-  }
-  const lower = message.toLowerCase();
-  if (lower.includes("invalid api call") || lower.includes("error message")) {
-    return `${ticker}: Alpha Vantageで ${apiSymbol} が認識されませんでした。米国株は例: RGTI / SIDU、日本株は例: 7203.T のような形式を試しますが、Alpha Vantage側が未対応の銘柄もあります。詳細: ${message}`;
-  }
-  if (lower.includes("rate limit") || lower.includes("free api requests") || lower.includes("standard api rate limit") || lower.includes("premium")) {
-    return `${ticker}: Alpha Vantage無料枠の制限に達しています。1分以上空けるか、1日上限リセット後に再実行してください。詳細: ${message}`;
-  }
-  if (lower.includes("api key") || lower.includes("apikey")) {
-    return `${ticker}: STOCK_API_KEYが無効、または未反映の可能性があります。Vercel/ローカルの環境変数と再起動を確認してください。詳細: ${message}`;
-  }
-  return `${ticker}: ${message}`;
 }

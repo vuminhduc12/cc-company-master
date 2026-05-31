@@ -40,6 +40,7 @@ http://localhost:3000 を開きます。
 
 ```bash
 OPENAI_API_KEY=
+STOCK_DATA_PROVIDER=yahoo
 STOCK_API_KEY=
 NEWS_API_KEY=
 CRON_SECRET=
@@ -48,12 +49,13 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
 
-- `STOCK_API_KEY`: Alpha VantageのAPIキーを想定しています。
+- `STOCK_DATA_PROVIDER`: 株価取得元です。未設定または `yahoo` ならYahoo Financeを優先し、`alpha_vantage` ならAlpha Vantageを優先します。
+- `STOCK_API_KEY`: Alpha Vantageを使う場合のAPIキーです。Yahoo Finance優先運用ではフォールバック用の任意設定です。
 - `NEWS_API_KEY`: News APIのAPIキーを想定しています。
 - `OPENAI_API_KEY`: ニュース分析JSON生成に使います。
 - `CRON_SECRET`: Vercel Cronと手動実行APIの保護に使います。
 
-ローカル開発では `CRON_SECRET` が未設定でもSettingsから手動実行できます。APIキー未設定時の手動実行はmock-dataで動きます。
+株価取得はYahoo Finance、Alpha Vantage、ローカル履歴データの順にフォールバックします。ローカル開発では `CRON_SECRET` が未設定でもSettingsから手動実行できます。AI/ニュースAPIキー未設定時の手動実行はmock-dataまたはルールベース分析で動きます。
 
 ## Supabase保存
 

@@ -41,6 +41,7 @@ create table if not exists public.news (
   id uuid primary key default gen_random_uuid(),
   stock_id uuid references public.stocks(id) on delete set null,
   title text not null,
+  url text,
   source text,
   published_at text,
   summary text,
@@ -51,6 +52,19 @@ create table if not exists public.news (
   ai_comment text,
   created_at timestamptz not null default now()
 );
+
+alter table public.news add column if not exists url text;
+
+delete from public.news a
+using public.news b
+where a.id > b.id
+  and a.stock_id is not distinct from b.stock_id
+  and a.published_at is not distinct from b.published_at
+  and a.title = b.title
+  and a.source is not distinct from b.source;
+
+create unique index if not exists news_stock_published_title_source_key
+  on public.news (stock_id, published_at, title, source);
 
 create table if not exists public.ai_tasks (
   id uuid primary key default gen_random_uuid(),

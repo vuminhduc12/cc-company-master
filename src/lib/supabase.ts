@@ -95,9 +95,10 @@ export async function saveJobResult(result: AiJobResult) {
     if (priceError) throw new Error(`Supabase daily_prices save failed (${item.stock.ticker}): ${priceError.message}`);
 
     if (item.news.length > 0) {
-      const { error: newsError } = await supabase.from("news").insert(item.news.map((newsItem) => ({
+      const newsRows = uniqueNewsRows(item.news.map((newsItem) => ({
         stock_id: stockId,
         title: newsItem.title,
+        url: newsItem.url,
         source: newsItem.source,
         published_at: newsItem.publishedAt,
         summary: newsItem.summary,
@@ -107,6 +108,7 @@ export async function saveJobResult(result: AiJobResult) {
         opportunity: newsItem.opportunity,
         ai_comment: newsItem.aiComment
       })));
+      const { error: newsError } = await supabase.from("news").upsert(newsRows, { onConflict: "stock_id,published_at,title,source" });
       if (newsError) throw new Error(`Supabase news save failed (${item.stock.ticker}): ${newsError.message}`);
     }
   }
@@ -147,4 +149,28 @@ export async function saveJobResult(result: AiJobResult) {
   if (runError) throw new Error(`Supabase job_runs save failed: ${runError.message}`);
 
   return { saved: true };
+}
+
+type NewsRow = {
+  stock_id: string;
+  title: string;
+  url?: string;
+  source: string;
+  published_at: string;
+  summary: string;
+  sentiment: string;
+  impact_score: number;
+  risk: string;
+  opportunity: string;
+  ai_comment: string;
+};
+
+function uniqueNewsRows(rows: NewsRow[]) {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = `${row.stock_id}|${row.published_at}|${row.title}|${row.source}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

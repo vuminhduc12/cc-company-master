@@ -61,7 +61,7 @@ export default function ReportsPage() {
           <p className="mt-1 text-sm text-slate-400">海外ニュースをAIが日本語で整理した内容です。</p>
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
-          {reportNews.map((item) => <NewsCard key={`${item.publishedAt}-${item.title}`} item={item} />)}
+          {reportNews.map((item, index) => <NewsCard key={newsKey(item, index)} item={item} />)}
         </div>
       </section>
     </div>
@@ -106,4 +106,8 @@ function ReportNewsSummary({ value }: { value: string }) {
 
 function splitLines(value: string) {
   return value.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
+function newsKey(item: { publishedAt: string; ticker: string; title: string; url?: string }, index: number) {
+  return `${item.ticker}-${item.publishedAt}-${item.url ?? item.title}-${index}`;
 }
