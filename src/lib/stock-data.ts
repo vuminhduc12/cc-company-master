@@ -12,6 +12,10 @@ type RawDailyPrice = {
 
 type StockDataMode = "live" | "mock";
 type StockDataProvider = "yahoo" | "alpha_vantage";
+type FetchAttempt = {
+  result: StockDataResult | null;
+  error?: string;
+};
 
 export type StockDataResult = {
   prices: DailyPrice[];
@@ -24,25 +28,30 @@ export async function fetchStockData(ticker: string): Promise<StockDataResult> {
   const provider = normalizeProvider(process.env.STOCK_DATA_PROVIDER);
   const fallback = getPricesForTicker(ticker);
   const warnings: string[] = [];
+  const errors: string[] = [];
 
   if (provider === "yahoo") {
-    const yahooResult = await tryFetchYahooFinanceStockData(ticker);
-    if (yahooResult) return yahooResult;
+    const yahooAttempt = await tryFetchYahooFinanceStockData(ticker);
+    if (yahooAttempt.result) return yahooAttempt.result;
+    if (yahooAttempt.error) errors.push(`Yahoo Finance: ${yahooAttempt.error}`);
     warnings.push(`${ticker}: Yahoo Financeから日足データを取得できませんでした。`);
 
-    const alphaResult = await tryFetchAlphaVantageStockData(ticker);
-    if (alphaResult) {
-      return withWarning(alphaResult, warnings.join(" "));
+    const alphaAttempt = await tryFetchAlphaVantageStockData(ticker);
+    if (alphaAttempt.result) {
+      return withWarning(alphaAttempt.result, warnings.join(" "));
     }
+    if (alphaAttempt.error) errors.push(`Alpha Vantage: ${alphaAttempt.error}`);
   } else {
-    const alphaResult = await tryFetchAlphaVantageStockData(ticker);
-    if (alphaResult) return alphaResult;
+    const alphaAttempt = await tryFetchAlphaVantageStockData(ticker);
+    if (alphaAttempt.result) return alphaAttempt.result;
+    if (alphaAttempt.error) errors.push(`Alpha Vantage: ${alphaAttempt.error}`);
     warnings.push(`${ticker}: Alpha Vantageから日足データを取得できませんでした。`);
 
-    const yahooResult = await tryFetchYahooFinanceStockData(ticker);
-    if (yahooResult) {
-      return withWarning(yahooResult, warnings.join(" "));
+    const yahooAttempt = await tryFetchYahooFinanceStockData(ticker);
+    if (yahooAttempt.result) {
+      return withWarning(yahooAttempt.result, warnings.join(" "));
     }
+    if (yahooAttempt.error) errors.push(`Yahoo Finance: ${yahooAttempt.error}`);
   }
 
   if (fallback) {
@@ -54,18 +63,22 @@ export async function fetchStockData(ticker: string): Promise<StockDataResult> {
     };
   }
 
-  throw new Error(`${ticker}: 株価データを取得できませんでした。Yahoo Finance、Alpha Vantage、ローカル履歴のいずれにも有効な日足がありません。`);
+  const details = errors.length > 0 ? ` 詳細: ${errors.join(" / ")}` : "";
+  const marketHint = /^\d{4}\.T$/i.test(ticker)
+    ? " 国内株は東証上場の4桁コードを想定しています。銘柄コードが東証に存在するか確認してください。"
+    : "";
+  throw new Error(`${ticker}: 株価データを取得できませんでした。Yahoo Finance、Alpha Vantage、ローカル履歴のいずれにも有効な日足がありません。${marketHint}${details}`);
 }
 
 function normalizeProvider(value: string | undefined): StockDataProvider {
   return value === "alpha_vantage" ? "alpha_vantage" : "yahoo";
 }
 
-async function tryFetchYahooFinanceStockData(ticker: string): Promise<StockDataResult | null> {
+async function tryFetchYahooFinanceStockData(ticker: string): Promise<FetchAttempt> {
   try {
-    return await fetchYahooFinanceStockData(ticker);
-  } catch {
-    return null;
+    return { result: await fetchYahooFinanceStockData(ticker) };
+  } catch (error) {
+    return { result: null, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 
@@ -119,14 +132,14 @@ async function fetchYahooFinanceStockData(ticker: string): Promise<StockDataResu
   };
 }
 
-async function tryFetchAlphaVantageStockData(ticker: string): Promise<StockDataResult | null> {
+async function tryFetchAlphaVantageStockData(ticker: string): Promise<FetchAttempt> {
   const key = process.env.STOCK_API_KEY;
-  if (!key) return null;
+  if (!key) return { result: null, error: "STOCK_API_KEYが未設定です。" };
 
   try {
-    return await fetchAlphaVantageStockData(ticker, key);
-  } catch {
-    return null;
+    return { result: await fetchAlphaVantageStockData(ticker, key) };
+  } catch (error) {
+    return { result: null, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 

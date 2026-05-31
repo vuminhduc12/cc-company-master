@@ -5,6 +5,7 @@ import { fetchStockData } from "@/lib/stock-data";
 import type { DailyPrice, NewsItem, Stock, WatchStatus } from "@/types";
 
 type TradeSide = "auto" | "margin_buy" | "short_sell";
+type SearchMarket = "us" | "jp";
 
 type EntryPlan = {
   side: "信用買い候補" | "信用売り候補" | "見送り・監視";
@@ -36,14 +37,15 @@ type StockSearchResponse = {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({})) as { ticker?: string; side?: TradeSide };
-    const ticker = String(body.ticker ?? "").trim().toUpperCase();
+    const body = await request.json().catch(() => ({})) as { ticker?: string; side?: TradeSide; market?: SearchMarket };
+    const market = body.market === "jp" ? "jp" : "us";
+    const ticker = normalizeTickerForMarket(String(body.ticker ?? "").trim().toUpperCase(), market);
     const side = body.side ?? "auto";
     if (!ticker || !/^[A-Z0-9.-]{1,12}$/.test(ticker)) {
       return NextResponse.json({ ok: false, error: "ティッカーを正しく入力してください。" }, { status: 400 });
     }
 
-    const stock = resolveStock(ticker);
+    const stock = resolveStock(ticker, market);
     const stockData = await fetchStockData(ticker);
     const prices = stockData.prices;
     const price = prices[prices.length - 1];
@@ -72,13 +74,21 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function resolveStock(ticker: string): Stock {
+function normalizeTickerForMarket(ticker: string, market: SearchMarket) {
+  if (market === "jp") {
+    if (/^\d{4}$/.test(ticker)) return `${ticker}.T`;
+    if (/^\d{4}\.JP$/i.test(ticker)) return ticker.replace(/\.JP$/i, ".T");
+  }
+  return ticker;
+}
+
+function resolveStock(ticker: string, market: SearchMarket): Stock {
   const found = watchlist.find((item) => item.stock.ticker === ticker)?.stock;
   return found ?? {
     ticker,
     companyName: ticker,
     sector: "Unknown",
-    exchange: ticker.includes(".") ? "Local" : "NASDAQ/NYSE"
+    exchange: market === "jp" ? "TSE" : "NASDAQ/NYSE"
   };
 }
 

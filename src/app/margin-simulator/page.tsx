@@ -15,6 +15,7 @@ import {
 import type { DailyPrice, NewsItem, Stock, WatchStatus } from "@/types";
 
 type TradeSide = "auto" | "margin_buy" | "short_sell";
+type SearchMarket = "us" | "jp";
 
 type StockSearchResult = {
   ok: boolean;
@@ -74,6 +75,24 @@ function price(value: number) {
   return `${value.toFixed(1)}円`;
 }
 
+function formatMarketPrice(ticker: string, value: number) {
+  if (isJapaneseTicker(ticker)) return `${new Intl.NumberFormat("ja-JP").format(Math.round(value))}円`;
+  return `$${value.toFixed(2)}`;
+}
+
+function isJapaneseTicker(ticker: string) {
+  return /^\d{4}(\.T|\.JP)?$/i.test(ticker);
+}
+
+function normalizeTickerForMarket(ticker: string, market: SearchMarket) {
+  const normalized = ticker.trim().toUpperCase();
+  if (market === "jp") {
+    if (/^\d{4}$/.test(normalized)) return `${normalized}.T`;
+    if (/^\d{4}\.JP$/i.test(normalized)) return normalized.replace(/\.JP$/i, ".T");
+  }
+  return normalized;
+}
+
 function scenarioTone(status: MarginScenario["status"]) {
   if (status === "10%割れ候補") return "bg-red-500/20 text-red-200 ring-red-400/30";
   if (status === "追証候補") return "bg-yellow-300/20 text-yellow-100 ring-yellow-300/30";
@@ -114,6 +133,7 @@ export default function MarginSimulatorPage() {
   const [inputs, setInputs] = useState<MarginInputs>(defaultMarginInputs);
   const [inputDraft, setInputDraft] = useState<Record<keyof MarginInputs, string>>(() => buildInputDraft(defaultMarginInputs));
   const [ticker, setTicker] = useState("RGTI");
+  const [searchMarket, setSearchMarket] = useState<SearchMarket>("us");
   const [tradeSide, setTradeSide] = useState<TradeSide>("auto");
   const [searchResult, setSearchResult] = useState<StockSearchResult | null>(null);
   const [searchStatus, setSearchStatus] = useState<"idle" | "running" | "error">("idle");
@@ -143,7 +163,7 @@ export default function MarginSimulatorPage() {
   }
 
   async function searchTicker() {
-    const normalized = ticker.trim().toUpperCase();
+    const normalized = normalizeTickerForMarket(ticker, searchMarket);
     if (!normalized) return;
     setSearchStatus("running");
     setSearchError("");
@@ -151,7 +171,7 @@ export default function MarginSimulatorPage() {
       const response = await fetch("/api/stock-search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ticker: normalized, side: tradeSide })
+        body: JSON.stringify({ ticker: normalized, side: tradeSide, market: searchMarket })
       });
       const result = await response.json() as StockSearchResult;
       if (!response.ok || !result.ok) throw new Error(result.error ?? "検索に失敗しました。");
@@ -167,6 +187,7 @@ export default function MarginSimulatorPage() {
   function applySearchPriceToSimulator() {
     if (!searchResult) return;
     if (searchResult.entryPlan.side !== "信用買い候補") return;
+    if (!isJapaneseTicker(searchResult.stock.ticker)) return;
     const nextInputs = {
       ...inputs,
       buyPrice: Number(searchResult.price.close.toFixed(2)),
@@ -199,9 +220,36 @@ export default function MarginSimulatorPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-300">Realtime AI Search</p>
           <h3 className="mt-2 text-xl font-black text-slate-50">銘柄検索とAIエントリー判定</h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            APIキーがある場合はAlpha Vantageから直近日足を取得します。未設定または制限中はRGTI/SIDUのローカルデータを使います。
+            国内株と米国株を切り替えて検索できます。株価はYahoo Financeを優先し、必要に応じてAlpha Vantageやローカル履歴に切り替えます。
           </p>
           <div className="mt-4 grid gap-3">
+            <div>
+              <span className="text-xs font-semibold text-slate-400">市場</span>
+              <div className="mt-1 grid grid-cols-2 overflow-hidden rounded-xl border border-white/10 bg-slate-950 p-1">
+                {([
+                  ["us", "米国株"],
+                  ["jp", "国内株"]
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`rounded-lg px-3 py-2 text-sm font-black transition ${
+                      searchMarket === value
+                        ? "bg-sky-300 text-slate-950 shadow-lg shadow-sky-950/30"
+                        : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
+                    }`}
+                    onClick={() => {
+                      setSearchMarket(value);
+                      setTicker(value === "jp" ? "7203" : "RGTI");
+                      setSearchResult(null);
+                      setSearchError("");
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label>
               <span className="text-xs font-semibold text-slate-400">Ticker</span>
               <input
@@ -211,8 +259,11 @@ export default function MarginSimulatorPage() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") void searchTicker();
                 }}
-                placeholder="RGTI / SIDU / TSLA"
+                placeholder={searchMarket === "jp" ? "7203 / 6758 / 9984" : "RGTI / SIDU / TSLA"}
               />
+              <span className="mt-1 block text-[11px] leading-5 text-slate-500">
+                {searchMarket === "jp" ? "国内株は4桁コードで入力できます。例: 7203 は 7203.T として取得します。" : "米国株はティッカーをそのまま入力します。例: RGTI / TSLA / NVDA"}
+              </span>
             </label>
             <label>
               <span className="text-xs font-semibold text-slate-400">判定モード</span>
@@ -243,6 +294,7 @@ export default function MarginSimulatorPage() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-1 text-xs font-black text-sky-200">{searchResult.stock.ticker}</span>
+                  <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-100">{isJapaneseTicker(searchResult.stock.ticker) ? "国内株" : "米国株"}</span>
                   <span className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-1 text-xs font-semibold text-slate-300">{searchResult.mode === "live" ? "Live API" : "Local Data"}</span>
                   <span className={`rounded-full px-3 py-1 text-xs font-black ring-1 ${entryTone(searchResult.entryPlan.side)}`}>{searchResult.entryPlan.side}</span>
                 </div>
@@ -251,21 +303,21 @@ export default function MarginSimulatorPage() {
               </div>
               <button
                 className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-slate-800/60 disabled:text-slate-500"
-                disabled={!isBuyCandidate}
+                disabled={!isBuyCandidate || !isJapaneseTicker(searchResult.stock.ticker)}
                 onClick={applySearchPriceToSimulator}
               >
-                {isBuyCandidate ? "価格を下の信用買い計算へ反映" : isShortCandidate ? "信用売りは下の買建計算へ反映不可" : "見送り判定は反映不可"}
+                {isBuyCandidate && isJapaneseTicker(searchResult.stock.ticker) ? "価格を下の信用買い計算へ反映" : isBuyCandidate ? "米国株は円建て計算へ反映不可" : isShortCandidate ? "信用売りは下の買建計算へ反映不可" : "見送り判定は反映不可"}
               </button>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <AiMetric label="現在値" value={`$${searchResult.price.close.toFixed(2)}`} tone="text-slate-50" />
+              <AiMetric label="現在値" value={formatMarketPrice(searchResult.stock.ticker, searchResult.price.close)} tone="text-slate-50" />
               <AiMetric label="前日比" value={`${searchResult.price.changePercent >= 0 ? "+" : ""}${searchResult.price.changePercent.toFixed(2)}%`} tone={searchResult.price.changePercent >= 0 ? "text-sky-300" : "text-red-300"} />
               <AiMetric label="AIスコア" value={`${searchResult.score}/100`} tone={searchResult.score >= 65 ? "text-green-300" : searchResult.score >= 50 ? "text-yellow-200" : "text-red-300"} />
               <AiMetric label="利確到達率目安" value={`${searchResult.entryPlan.takeProfitProbability}%`} tone="text-green-300" />
               <AiMetric label="信頼度" value={`${searchResult.entryPlan.confidence}%`} tone="text-sky-200" />
-              <AiMetric label={isShortCandidate ? "利確目安（買戻し）" : "利確目安"} value={`$${searchResult.entryPlan.takeProfitPrice.toFixed(2)}`} tone="text-green-300" />
-              <AiMetric label={isShortCandidate ? "損切り目安（踏み上げ）" : "損切り目安"} value={`$${searchResult.entryPlan.stopLossPrice.toFixed(2)}`} tone="text-red-300" />
+              <AiMetric label={isShortCandidate ? "利確目安（買戻し）" : "利確目安"} value={formatMarketPrice(searchResult.stock.ticker, searchResult.entryPlan.takeProfitPrice)} tone="text-green-300" />
+              <AiMetric label={isShortCandidate ? "損切り目安（踏み上げ）" : "損切り目安"} value={formatMarketPrice(searchResult.stock.ticker, searchResult.entryPlan.stopLossPrice)} tone="text-red-300" />
               <AiMetric label="Risk/Reward" value={`${searchResult.entryPlan.riskReward.toFixed(2)}x`} tone="text-amber-200" />
               <AiMetric label="RSI" value={searchResult.price.rsi.toFixed(1)} tone={searchResult.price.rsi >= 70 ? "text-yellow-200" : "text-slate-100"} />
               <AiMetric label="出来高倍率" value={`${searchResult.price.volumeRatio.toFixed(2)}x`} tone="text-slate-100" />
@@ -284,7 +336,7 @@ export default function MarginSimulatorPage() {
               </p>
             ) : null}
             <p className="mt-3 text-xs leading-5 text-slate-500">
-              米国株の価格はドル表示です。下の信用買いExcel計算は円建ての買建概算なので、実際に使う場合は通貨、為替、証券会社の信用取引対象、金利、規制を確認してください。
+              国内株は円、米国株はドルで表示します。下の信用買いExcel計算は円建ての買建専用なので、米国株は為替と証券会社の信用取引対象を別途確認してください。
             </p>
           </div>
         ) : (
