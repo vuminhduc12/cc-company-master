@@ -1,7 +1,7 @@
 import type { NewsItem } from "@/types";
 import { StatusBadge } from "./StatusBadge";
 
-export function NewsCard({ item, featured = false }: { item: NewsItem; featured?: boolean }) {
+export function NewsCard({ item, featured = false, onDelete }: { item: NewsItem; featured?: boolean; onDelete?: (item: NewsItem) => void }) {
   const summary = parseSummary(item.summary);
   const tickerStyle = getTickerStyle(item.ticker);
   const sentimentStyle = {
@@ -68,6 +68,15 @@ export function NewsCard({ item, featured = false }: { item: NewsItem; featured?
           <a className="inline-flex shrink-0 items-center justify-center rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-300/20" href={item.url} target="_blank" rel="noreferrer">
             ニュース本文を開く ↗
           </a>
+        ) : null}
+        {onDelete ? (
+          <button
+            className="inline-flex shrink-0 items-center justify-center rounded-full border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-400/20"
+            onClick={() => onDelete(item)}
+            type="button"
+          >
+            削除
+          </button>
         ) : null}
       </div>
     </article>

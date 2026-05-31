@@ -1,18 +1,28 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { NewsCard } from "@/components/NewsCard";
-import { news } from "@/lib/mock-data";
-import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { news, watchlist } from "@/lib/mock-data";
+import { hiddenNewsStorageKey, hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
+import type { NewsItem } from "@/types";
 
 export default function NewsPage() {
   const jobResult = useAiJobResult();
-  const items = jobResult?.news ?? news;
-  const featured = items[0];
-  const positiveCount = items.filter((item) => item.sentiment === "Positive").length;
-  const negativeCount = items.filter((item) => item.sentiment === "Negative").length;
-  const averageImpact = items.length > 0 ? items.reduce((sum, item) => sum + item.impactScore, 0) / items.length : 0;
-  const rgtiCount = items.filter((item) => item.ticker === "RGTI").length;
-  const siduCount = items.filter((item) => item.ticker === "SIDU").length;
+  const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
+  const items = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
+  const tickerTabs = useMemo(() => buildTickerTabs(items), [items]);
+  const [selectedTicker, setSelectedTicker] = useState("ALL");
+  const activeTicker = selectedTicker === "ALL" || tickerTabs.some((tab) => tab.ticker === selectedTicker) ? selectedTicker : "ALL";
+  const filteredItems = activeTicker === "ALL" ? items : items.filter((item) => item.ticker === activeTicker);
+  const featured = filteredItems[0];
+  const positiveCount = filteredItems.filter((item) => item.sentiment === "Positive").length;
+  const negativeCount = filteredItems.filter((item) => item.sentiment === "Negative").length;
+  const averageImpact = filteredItems.length > 0 ? filteredItems.reduce((sum, item) => sum + item.impactScore, 0) / filteredItems.length : 0;
+
+  function deleteNews(item: NewsItem) {
+    hideNewsItem(item);
+    setHiddenNews(readHiddenNewsKeys());
+  }
 
   return (
     <div className="space-y-6">
@@ -22,11 +32,11 @@ export default function NewsPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">News Intelligence</p>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">AIニュース分析</h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              {jobResult ? `海外ニュースを日本語で分析 / 最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}。RGTIはブルー、SIDUはゴールドで表示します。
+              {jobResult ? `海外ニュースを日本語で分析 / 最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}。Watchlist銘柄ごとにニュースを切り替えて確認できます。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/20" href="https://www.google.com/finance/quote/RGTI:NASDAQ" target="_blank" rel="noreferrer">
+            <a className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/20" href={financeUrl(activeTicker)} target="_blank" rel="noreferrer">
               Google Financeで確認 ↗
             </a>
             <div className="rounded-full border border-white/10 bg-slate-950/55 px-4 py-2 text-sm text-slate-300">
@@ -42,42 +52,67 @@ export default function NewsPage() {
       ) : null}
 
       <section className="grid gap-3 md:grid-cols-4">
-        <Metric label="取得ニュース" value={`${items.length}件`} />
+        <Metric label="表示ニュース" value={`${filteredItems.length}件`} />
         <Metric label="Positive" value={`${positiveCount}件`} tone="green" />
         <Metric label="Negative" value={`${negativeCount}件`} tone="red" />
         <Metric label="平均影響度" value={`${averageImpact.toFixed(1)}/10`} tone="blue" />
       </section>
 
-      <section className="grid gap-3 md:grid-cols-2">
-        <TickerSummary ticker="RGTI" name="Rigetti Computing" count={rgtiCount} tone="sky" />
-        <TickerSummary ticker="SIDU" name="Sidus Space" count={siduCount} tone="amber" />
+      <section className="rounded-2xl border border-white/10 bg-slate-900/75 p-3 shadow-xl shadow-black/20 ring-1 ring-white/5">
+        <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+          <TickerFilterButton
+            active={activeTicker === "ALL"}
+            count={items.length}
+            label="All"
+            onClick={() => setSelectedTicker("ALL")}
+            ticker="ALL"
+          />
+          {tickerTabs.map((tab) => (
+            <TickerFilterButton
+              key={tab.ticker}
+              active={activeTicker === tab.ticker}
+              count={tab.count}
+              label={tab.name}
+              onClick={() => setSelectedTicker(tab.ticker)}
+              ticker={tab.ticker}
+            />
+          ))}
+        </div>
       </section>
 
-      {featured ? <NewsCard item={featured} featured /> : null}
+      {featured ? <NewsCard item={featured} featured onDelete={deleteNews} /> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {items.slice(1).map((item, index) => <NewsCard key={newsKey(item, index + 1)} item={item} />)}
+        {filteredItems.slice(1).map((item, index) => <NewsCard key={newsKey(item, index + 1)} item={item} onDelete={deleteNews} />)}
       </div>
+      {filteredItems.length === 0 ? (
+        <div className="rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-5 text-sm leading-6 text-yellow-100">
+          この銘柄のニュースはまだありません。Manual AI Job または Cron が成功すると、Watchlist銘柄ごとのニュースがここに表示されます。
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function TickerSummary({ ticker, name, count, tone }: { ticker: string; name: string; count: number; tone: "sky" | "amber" }) {
-  const style = tone === "amber"
-    ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
-    : "border-sky-300/25 bg-sky-300/10 text-sky-100";
+function TickerFilterButton({ active, count, label, onClick, ticker }: { active: boolean; count: number; label: string; onClick: () => void; ticker: string }) {
+  const activeStyle = ticker === "ALL"
+    ? "border-slate-200/30 bg-slate-100 text-slate-950"
+    : "border-sky-300/40 bg-sky-300 text-slate-950";
 
   return (
-    <div className={`rounded-2xl border p-4 ${style}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.24em] opacity-75">{ticker}</p>
-          <p className="mt-1 text-sm text-slate-200">{name}</p>
-        </div>
-        <p className="text-2xl font-black">{count}</p>
-      </div>
-      <p className="mt-2 text-xs text-slate-400">この色のニュースカードが{ticker}関連です。</p>
-    </div>
+    <button
+      className={`grid min-w-[150px] grid-cols-[1fr_auto] items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+        active ? activeStyle : "border-white/10 bg-slate-950/60 text-slate-300 hover:border-sky-300/30 hover:bg-sky-300/10 hover:text-sky-100"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="min-w-0">
+        <span className="block text-xs font-black uppercase tracking-[0.18em]">{ticker}</span>
+        <span className="block truncate text-[11px] font-semibold opacity-75">{label}</span>
+      </span>
+      <span className={`rounded-full px-2 py-1 text-xs font-black ${active ? "bg-slate-950/15" : "bg-white/10"}`}>{count}</span>
+    </button>
   );
 }
 
@@ -99,4 +134,31 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
 
 function newsKey(item: { publishedAt: string; ticker: string; title: string; url?: string }, index: number) {
   return `${item.ticker}-${item.publishedAt}-${item.url ?? item.title}-${index}`;
+}
+
+function buildTickerTabs(items: typeof news) {
+  return watchlist.map((item) => ({
+    ticker: item.stock.ticker,
+    name: item.stock.companyName,
+    count: items.filter((newsItem) => newsItem.ticker === item.stock.ticker).length
+  }));
+}
+
+function financeUrl(ticker: string) {
+  if (ticker === "ALL") return "https://www.google.com/finance";
+  const stock = watchlist.find((item) => item.stock.ticker === ticker)?.stock;
+  const exchange = stock?.exchange === "NYSE" ? "NYSE" : stock?.exchange === "NASDAQ" ? "NASDAQ" : "";
+  return exchange ? `https://www.google.com/finance/quote/${ticker}:${exchange}` : `https://www.google.com/finance/search?q=${encodeURIComponent(ticker)}`;
+}
+
+function readHiddenNewsKeys() {
+  if (typeof window === "undefined") return new Set<string>();
+  const stored = localStorage.getItem(hiddenNewsStorageKey);
+  if (!stored) return new Set<string>();
+  try {
+    const parsed = JSON.parse(stored) as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set<string>();
+  }
 }

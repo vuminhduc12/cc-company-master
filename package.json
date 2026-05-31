@@ -5,6 +5,7 @@
   "description": "Minimal stock management MVP for RGTI monitoring.",
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "rm -rf .next && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src --max-warnings=0",
