@@ -16,6 +16,7 @@ type AiRiskComment = {
   summary: string;
   dataFreshness?: string;
   riskLevel: "低" | "中" | "高";
+  confidence?: "低" | "中" | "高";
   entryPriceComment?: string;
   positionSizeComment: string;
   exitPlanComment: string;
@@ -23,6 +24,8 @@ type AiRiskComment = {
   fxComment?: string;
   technicalComment?: string;
   newsComment: string;
+  stressTest?: string[];
+  blindSpots?: string[];
   checklist: string[];
 };
 
@@ -48,6 +51,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
   const [fxAsOf, setFxAsOf] = useState("");
   const [aiComment, setAiComment] = useState<AiRiskComment | null>(null);
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [aiMode, setAiMode] = useState<"normal" | "detailed">("normal");
   const [aiError, setAiError] = useState("");
 
   const input: SpotSimulationInput = useMemo(() => ({
@@ -93,8 +97,9 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
     };
   }, [currency]);
 
-  async function requestAiComment() {
+  async function requestAiComment(diagnosisMode: "normal" | "detailed") {
     setAiStatus("loading");
+    setAiMode(diagnosisMode);
     setAiError("");
 
     try {
@@ -102,6 +107,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          diagnosisMode,
           stock,
           marketMetrics: {
             close: price.close,
@@ -124,7 +130,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
         })
       });
 
-      if (!response.ok) throw new Error(`AI診断に失敗しました (${response.status})`);
+      if (!response.ok) throw new Error(`${diagnosisMode === "detailed" ? "AI詳細診断" : "AI診断"}に失敗しました (${response.status})`);
       const data = await response.json();
       setAiComment(data.analysis);
       setAiStatus("done");
@@ -223,19 +229,30 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div>
                 <p className="text-sm font-bold text-emerald-100">AIリスク診断</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">計算結果、RSI、移動平均、出来高倍率、直近ニュースを渡して、ポジションサイズと出口計画のリスクを説明します。</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">通常診断は低コストで要点確認、詳細診断は高精度モデルで前提崩れや見落としまで深掘りします。</p>
               </div>
-              <button
-                type="button"
-                onClick={requestAiComment}
-                disabled={aiStatus === "loading"}
-                className="h-11 w-full rounded-xl border border-emerald-300/45 bg-emerald-300/15 px-4 text-sm font-black text-emerald-50 transition hover:bg-emerald-300/25 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
-              >
-                {aiStatus === "loading" ? "診断中..." : "AIにリスク診断させる"}
-              </button>
+              <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => requestAiComment("normal")}
+                  disabled={aiStatus === "loading"}
+                  className="h-11 rounded-xl border border-emerald-300/45 bg-emerald-300/15 px-4 text-sm font-black text-emerald-50 transition hover:bg-emerald-300/25 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {aiStatus === "loading" && aiMode === "normal" ? "診断中..." : "通常診断"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestAiComment("detailed")}
+                  disabled={aiStatus === "loading"}
+                  className="h-11 rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 text-sm font-black text-amber-50 transition hover:bg-amber-300/25 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {aiStatus === "loading" && aiMode === "detailed" ? "詳細診断中..." : "詳細診断"}
+                </button>
+              </div>
             </div>
+            <p className="mt-3 text-[11px] leading-5 text-slate-500">詳細診断は高精度モデルを使うため、通常診断よりAPIコストが高くなります。</p>
             {aiStatus === "error" ? <p className="mt-3 text-sm text-red-200">{aiError}</p> : null}
-            {aiComment ? <AiCommentPanel comment={aiComment} /> : null}
+            {aiComment ? <AiCommentPanel comment={aiComment} mode={aiMode} /> : null}
           </div>
         </div>
       </div>
@@ -296,7 +313,7 @@ function ScenarioStatus({ scenario }: { scenario: SpotScenario }) {
   return <span className={`inline-flex min-w-20 justify-center rounded-full border px-2.5 py-1 text-xs font-bold ${className}`}>{scenario.status}</span>;
 }
 
-function AiCommentPanel({ comment }: { comment: AiRiskComment }) {
+function AiCommentPanel({ comment, mode }: { comment: AiRiskComment; mode: "normal" | "detailed" }) {
   const riskClass = comment.riskLevel === "高"
     ? "border-red-400/40 bg-red-400/15 text-red-100"
     : comment.riskLevel === "中"
@@ -306,8 +323,14 @@ function AiCommentPanel({ comment }: { comment: AiRiskComment }) {
   return (
     <div className="mt-4 border-t border-white/10 pt-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p className="text-sm leading-6 text-slate-200">{comment.summary}</p>
-        <span className={`inline-flex shrink-0 justify-center rounded-full border px-3 py-1 text-xs font-black ${riskClass}`}>リスク {comment.riskLevel}</span>
+        <div>
+          <p className="text-xs font-bold text-slate-400">{mode === "detailed" ? "詳細診断" : "通常診断"}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-200">{comment.summary}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <span className={`inline-flex justify-center rounded-full border px-3 py-1 text-xs font-black ${riskClass}`}>リスク {comment.riskLevel}</span>
+          {comment.confidence ? <span className="inline-flex justify-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-slate-200">信頼度 {comment.confidence}</span> : null}
+        </div>
       </div>
       {comment.dataFreshness ? (
         <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
@@ -324,12 +347,25 @@ function AiCommentPanel({ comment }: { comment: AiRiskComment }) {
         {comment.technicalComment ? <AiText label="テクニカル" value={comment.technicalComment} /> : null}
         <AiText label="ニュース" value={comment.newsComment} />
       </div>
+      {comment.stressTest?.length ? <AiList title="ストレステスト" items={comment.stressTest} /> : null}
+      {comment.blindSpots?.length ? <AiList title="見落とし確認" items={comment.blindSpots} /> : null}
       <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
         <p className="text-xs font-bold text-slate-300">確認チェックリスト</p>
         <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
           {comment.checklist.map((item) => <li key={item}>・{item}</li>)}
         </ul>
       </div>
+    </div>
+  );
+}
+
+function AiList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
+      <p className="text-xs font-bold text-slate-300">{title}</p>
+      <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
+        {items.map((item) => <li key={item}>・{item}</li>)}
+      </ul>
     </div>
   );
 }

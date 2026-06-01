@@ -11,6 +11,7 @@ import type { DailyPrice, NewsItem, Stock } from "@/types";
 export const dynamic = "force-dynamic";
 
 type RequestBody = {
+  diagnosisMode?: "normal" | "detailed";
   stock?: Stock;
   marketMetrics?: {
     close?: number;
@@ -30,6 +31,7 @@ type AiRiskComment = {
   summary: string;
   dataFreshness: string;
   riskLevel: "低" | "中" | "高";
+  confidence?: "低" | "中" | "高";
   entryPriceComment: string;
   positionSizeComment: string;
   exitPlanComment: string;
@@ -37,6 +39,8 @@ type AiRiskComment = {
   fxComment: string;
   technicalComment: string;
   newsComment: string;
+  stressTest?: string[];
+  blindSpots?: string[];
   checklist: string[];
 };
 
@@ -86,13 +90,15 @@ export async function POST(request: Request) {
     };
     const simulation = calculateSpotSimulation(enrichedInput);
     const ruleRisk = buildRuleRisk(enrichedInput, simulation, enrichment.quote, enrichment.technical, enrichment.news, enrichment.fx);
+    const diagnosisMode = body.diagnosisMode === "detailed" ? "detailed" : "normal";
     const payload = { ...body, stock: body.stock, input: enrichedInput, simulation, realtime: enrichment, ruleRisk };
-    const fallback = buildRuleBasedComment(payload);
+    const fallback = buildRuleBasedComment(payload, diagnosisMode);
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ ok: true, mode: "rule", analysis: fallback, realtime: enrichment, ruleRisk, simulation });
+      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, analysis: fallback, realtime: enrichment, ruleRisk, simulation });
     }
 
+    const prompt = diagnosisMode === "detailed" ? buildDetailedSystemPrompt() : buildNormalSystemPrompt();
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -100,32 +106,25 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: diagnosisMode === "detailed" ? "gpt-5.5" : "gpt-4o-mini",
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
-            content: [
-              "You are a Japanese risk analyst for a stock cash-position simulator.",
-              "Use only the JSON data provided by the application.",
-              "Do not assume or invent real-time prices, news, exchange rates, or market conditions.",
-              "If quote, FX, or news timestamps are stale, clearly mention the freshness limitation.",
-              "Do not recommend buy, sell, hold, or specific investment action.",
-              "Do not change deterministic simulation numbers or tax calculations.",
-              "Explain only risk, entry price context, position sizing, exit plan, tax impact, FX impact, technical context, and news context.",
-              "Return strict JSON with keys: summary, dataFreshness, riskLevel, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, checklist.",
-              "riskLevel must be one of: 低, 中, 高. checklist must be 3 to 5 short Japanese strings."
-            ].join(" ")
+            content: prompt
           },
           {
             role: "user",
             content: JSON.stringify({
               stock: body.stock,
+              diagnosisMode,
               realtime: enrichment,
               input: enrichedInput,
               simulation,
               ruleRisk,
+              scenarioTable: simulation.scenarios,
+              dataQuality: buildDataQuality(enrichment),
               news: enrichment.news.slice(0, 5)
             })
           }
@@ -134,13 +133,13 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      return NextResponse.json({ ok: true, mode: "rule", analysis: fallback, realtime: enrichment, ruleRisk, simulation, warning: `OpenAI API returned ${response.status}` });
+      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, analysis: fallback, realtime: enrichment, ruleRisk, simulation, warning: `OpenAI API returned ${response.status}` });
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     const parsed = parseAiComment(content, fallback);
-    return NextResponse.json({ ok: true, mode: "ai", analysis: parsed, realtime: enrichment, ruleRisk, simulation });
+    return NextResponse.json({ ok: true, mode: "ai", diagnosisMode, analysis: parsed, realtime: enrichment, ruleRisk, simulation });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Unexpected error" },
@@ -158,6 +157,7 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
       summary: stringOr(parsed.summary, fallback.summary),
       dataFreshness: stringOr(parsed.dataFreshness, fallback.dataFreshness),
       riskLevel: parsed.riskLevel === "低" || parsed.riskLevel === "中" || parsed.riskLevel === "高" ? parsed.riskLevel : fallback.riskLevel,
+      confidence: parsed.confidence === "低" || parsed.confidence === "中" || parsed.confidence === "高" ? parsed.confidence : fallback.confidence,
       entryPriceComment: stringOr(parsed.entryPriceComment, fallback.entryPriceComment),
       positionSizeComment: stringOr(parsed.positionSizeComment, fallback.positionSizeComment),
       exitPlanComment: stringOr(parsed.exitPlanComment, fallback.exitPlanComment),
@@ -165,6 +165,8 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
       fxComment: stringOr(parsed.fxComment, fallback.fxComment),
       technicalComment: stringOr(parsed.technicalComment, fallback.technicalComment),
       newsComment: stringOr(parsed.newsComment, fallback.newsComment),
+      stressTest: stringArrayOr(parsed.stressTest, fallback.stressTest),
+      blindSpots: stringArrayOr(parsed.blindSpots, fallback.blindSpots),
       checklist: Array.isArray(parsed.checklist) && parsed.checklist.length
         ? parsed.checklist.filter((item): item is string => typeof item === "string").slice(0, 5)
         : fallback.checklist
@@ -174,17 +176,18 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
   }
 }
 
-function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input" | "simulation">> & RequestBody & { realtime: Awaited<ReturnType<typeof buildRealtimeContext>>; ruleRisk: RuleRisk }): AiRiskComment {
+function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input" | "simulation">> & RequestBody & { realtime: Awaited<ReturnType<typeof buildRealtimeContext>>; ruleRisk: RuleRisk }, diagnosisMode: "normal" | "detailed"): AiRiskComment {
   const { stock, input, simulation, realtime, ruleRisk } = body;
   const rr = simulation.riskReward ?? 0;
   const latestNews = realtime.news[0];
   const account = accountTypeLabel(input.accountType);
   const entryGap = realtime.quote.price > 0 ? (input.entryPrice - realtime.quote.price) / realtime.quote.price * 100 : 0;
 
-  return {
+  const comment: AiRiskComment = {
     summary: `${stock.ticker}の現物エントリー案は、診断時点価格${formatNative(realtime.quote.price, input.currency)}に対して入力エントリー価格が${formatNative(input.entryPrice, input.currency)}です。損切り時の手取り損益は${formatSignedYen(simulation.stopLoss.netPnlJpy)}、利確時の手取り損益は${formatSignedYen(simulation.takeProfit.netPnlJpy)}、リスクリワードは${rr ? rr.toFixed(2) : "-"}で、ルール判定リスクは「${ruleRisk.level}」です。`,
     dataFreshness: `価格: ${realtime.quote.source} ${formatDateTime(realtime.quote.asOf)} / 日足: ${realtime.technical.source} ${realtime.technical.latestDailyDate} / 為替: ${realtime.fx.source} ${formatDateTime(realtime.fx.asOf)}`,
     riskLevel: ruleRisk.level,
+    confidence: realtime.quote.source.includes("fallback") || realtime.technical.source === "fallback" ? "低" : realtime.news.length ? "中" : "低",
     entryPriceComment: `入力エントリー価格は診断時点価格から${entryGap >= 0 ? "+" : ""}${entryGap.toFixed(2)}%です。現在付近で入る前提なら、この差が大きいほどシミュレーション結果と実際の約定後リスクがずれます。`,
     positionSizeComment: `投資額は${formatYen(simulation.positionValueJpy)}です。損切り損失が口座全体の許容損失を超える場合は、株数を下げる前提で再計算してください。`,
     exitPlanComment: `利確ラインは${formatNative(simulation.takeProfit.price, input.currency)}、損切りラインは${formatNative(simulation.stopLoss.price, input.currency)}です。エントリー前にどちらを優先するか決めておくと、値動き中の判断ブレを減らせます。`,
@@ -205,6 +208,21 @@ function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input
       input.accountType === "nisa" ? "NISA枠と損益通算不可の影響を確認" : "課税後の手取りで判断"
     ]
   };
+
+  if (diagnosisMode === "detailed") {
+    comment.stressTest = [
+      "寄付きやニュース直後に損切り価格を飛び越えて下落すると、想定損失より大きくなる可能性があります。",
+      input.currency === "USD" ? "株価シナリオが想定通りでも、USD/JPYが円高に動くと円ベースの手取りは悪化します。" : "国内株でも急変時はスプレッドや約定価格が想定からずれる可能性があります。",
+      "出来高が急減した場合、低位株・小型株では想定価格での退出が難しくなることがあります。"
+    ];
+    comment.blindSpots = [
+      realtime.news.length ? "ニュースは取得記事ベースであり、適時開示や決算資料を完全に網羅しているわけではありません。" : "ニュースが未取得のため、材料面の見落としリスクがあります。",
+      "税金はアプリ内の概算であり、実際の口座区分・手数料体系・為替レートで差が出ます。",
+      "ATRは日足ベースの目安で、当日中の急変や時間外取引を完全には表しません。"
+    ];
+  }
+
+  return comment;
 }
 
 async function buildRealtimeContext(
@@ -436,6 +454,74 @@ function buildRuleRisk(
 
 function stringOr(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function stringArrayOr(value: unknown, fallback: string[] | undefined) {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 6);
+  return items.length ? items : fallback;
+}
+
+function buildNormalSystemPrompt() {
+  return [
+    "You are a Japanese risk analyst for a stock cash-position simulator.",
+    "Use only the JSON data provided by the application.",
+    "Do not assume or invent real-time prices, news, exchange rates, or market conditions.",
+    "If quote, FX, or news timestamps are stale, clearly mention the freshness limitation.",
+    "Do not recommend buy, sell, hold, or specific investment action.",
+    "Do not change deterministic simulation numbers or tax calculations.",
+    "Explain only risk, entry price context, position sizing, exit plan, tax impact, FX impact, technical context, and news context.",
+    "Return strict JSON with keys: summary, dataFreshness, riskLevel, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, checklist.",
+    "riskLevel must be one of: 低, 中, 高. checklist must be 3 to 5 short Japanese strings."
+  ].join(" ");
+}
+
+function buildDetailedSystemPrompt() {
+  return [
+    "You are a senior Japanese risk analyst and trading-risk coach for a cash stock entry simulator.",
+    "Write for an experienced individual investor who understands risk-reward, volatility, stop placement, liquidity, and tax impact.",
+    "Use only the JSON data provided by the application.",
+    "Do not browse the web.",
+    "Do not assume or invent real-time prices, news, exchange rates, filings, market conditions, or company facts.",
+    "Do not recommend buy, sell, hold, entry, exit, or position changes as investment advice. You may give risk-management advice such as what to verify, what would invalidate the plan, and what conditions would make the plan fragile.",
+    "Do not change deterministic simulation numbers, tax calculations, FX conversion, ruleRisk, or scenario table values.",
+    "Your job is to stress-test the user's entry plan, identify weak assumptions, and give advanced, data-grounded risk-management advice in Japanese.",
+    "Be specific and numerical whenever the supplied data supports it. Reference exact levels, percentages, risk-reward, ATR%, stop-loss loss, take-profit net profit, FX rate, RSI, MA20, MA50, volume ratio, data age, and ruleRisk reasons.",
+    "Use a professional but direct tone. Avoid generic advice. Every major point must connect to supplied data.",
+    "Analyze entry price quality versus quote: premium/discount to current quote, whether the entry assumption is stale, and how the plan changes if execution price slips.",
+    "Analyze position sizing: position value, stop-loss net loss, loss percentage versus position value, concentration risk, and whether the scenario is sensitive to small price moves. Do not prescribe a specific share count.",
+    "Analyze exit-plan quality: take-profit, stop-loss, risk-reward, whether the stop is realistic versus ATR/volatility, and whether the plan depends too much on perfect execution.",
+    "Analyze technical context: RSI, MA20, MA50, volume ratio, ATR%, trend alignment, overheat risk, breakdown risk, and volatility regime.",
+    "Analyze execution risks: opening gaps, after-hours moves, spread widening, low liquidity, small-cap volatility, and the possibility that stop-loss execution differs from the modeled stop price.",
+    "Analyze FX risk for USD stocks: explain how USD/JPY affects JPY profit/loss and whether FX is a secondary or material driver based on the position value.",
+    "Analyze tax/account type: explain taxable account versus NISA impact, net-of-tax outcome, and NISA loss-offset limitation when relevant. Do not provide legal or tax advice.",
+    "Analyze news and data quality: news count, timestamp/freshness, missing news, fallback data, quote age, daily data age, and whether confidence should be reduced.",
+    "Provide decision-support advice only: define what should be checked before acting, what would invalidate the scenario, and what risk the user is accepting. Do not say the user should enter, buy, sell, hold, or avoid.",
+    "If data is stale, missing, fallback, or incomplete, explicitly lower confidence and explain why.",
+    "Return strict JSON in Japanese with keys: summary, dataFreshness, riskLevel, confidence, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, stressTest, blindSpots, checklist.",
+    "riskLevel and confidence must be one of: 低, 中, 高.",
+    "summary must be concise but include the dominant risk, not only a restatement of numbers.",
+    "entryPriceComment, positionSizeComment, exitPlanComment, technicalComment, and newsComment should each contain practical advice based on the data.",
+    "stressTest must be 3 to 5 short strings covering adverse but realistic cases.",
+    "blindSpots must be 3 to 5 short strings covering missing data or hidden assumptions.",
+    "checklist must be 4 to 6 action-oriented strings. Checklist items must be concrete checks before placing an order, not buy/sell recommendations."
+  ].join(" ");
+}
+
+function buildDataQuality(realtime: Awaited<ReturnType<typeof buildRealtimeContext>>) {
+  const quoteAgeMinutes = Math.max(Math.round((Date.now() - new Date(realtime.quote.asOf).getTime()) / 60000), 0);
+  const fxAgeMinutes = Math.max(Math.round((Date.now() - new Date(realtime.fx.asOf).getTime()) / 60000), 0);
+  return {
+    quoteAgeMinutes,
+    fxAgeMinutes,
+    newsCount: realtime.news.length,
+    priceSource: realtime.quote.source,
+    fxSource: realtime.fx.source,
+    dailySource: realtime.technical.source,
+    latestDailyDate: realtime.technical.latestDailyDate,
+    hasRealtimeQuoteFallback: realtime.quote.source.includes("fallback"),
+    hasFxFallback: !realtime.fx.ok
+  };
 }
 
 function formatYen(value: number) {
