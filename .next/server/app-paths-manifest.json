@@ -1,9 +1,8 @@
 {
+  "/api/spot-simulator/ai-comment/route": "app/api/spot-simulator/ai-comment/route.js",
   "/watchlist/page": "app/watchlist/page.js",
   "/stocks/[ticker]/page": "app/stocks/[ticker]/page.js",
-  "/margin-simulator/page": "app/margin-simulator/page.js",
-  "/page": "app/page.js",
+  "/settings/page": "app/settings/page.js",
   "/news/page": "app/news/page.js",
-  "/ai-employees/page": "app/ai-employees/page.js",
   "/reports/page": "app/reports/page.js"
 }

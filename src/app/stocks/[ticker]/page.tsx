@@ -4,6 +4,7 @@ import { use } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DataTable } from "@/components/DataTable";
+import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockChart } from "@/components/StockChart";
 import { resolvePriceSeries } from "@/lib/indicators";
 import { getPricesForTicker, watchlist } from "@/lib/mock-data";
@@ -98,6 +99,8 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       <div className="min-w-0">
         <StockChart prices={chartPrices} ticker={item.stock.ticker} />
       </div>
+
+      <SpotEntrySimulator stock={item.stock} price={latest} news={tickerNews} score={scoreAnalysis.score} />
 
       <section className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">

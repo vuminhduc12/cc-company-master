@@ -128,6 +128,24 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../src/app/api/fx/usd-jpy/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/fx/usd-jpy">> = Specific
+  const handler = {} as typeof import("../../src/app/api/fx/usd-jpy/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/spot-simulator/ai-comment/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/spot-simulator/ai-comment">> = Specific
+  const handler = {} as typeof import("../../src/app/api/spot-simulator/ai-comment/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../src/app/api/stock-search/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/stock-search">> = Specific

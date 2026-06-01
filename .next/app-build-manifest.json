@@ -6,20 +6,10 @@
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
-    "/news/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/news/page.js"
-    ],
     "/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/page.js"
-    ],
-    "/settings/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/settings/page.js"
     ],
     "/watchlist/page": [
       "static/chunks/webpack.js",
@@ -31,20 +21,30 @@
       "static/chunks/main-app.js",
       "static/chunks/app/stocks/[ticker]/page.js"
     ],
-    "/margin-simulator/page": [
+    "/api/fx/usd-jpy/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/margin-simulator/page.js"
+      "static/chunks/app/api/fx/usd-jpy/route.js"
     ],
-    "/api/stock-search/route": [
+    "/api/spot-simulator/ai-comment/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/api/stock-search/route.js"
+      "static/chunks/app/api/spot-simulator/ai-comment/route.js"
     ],
-    "/ai-employees/page": [
+    "/settings/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/ai-employees/page.js"
+      "static/chunks/app/settings/page.js"
+    ],
+    "/api/cron/daily-job/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/cron/daily-job/route.js"
+    ],
+    "/news/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/news/page.js"
     ],
     "/reports/page": [
       "static/chunks/webpack.js",
