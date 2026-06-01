@@ -5,9 +5,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DataTable } from "@/components/DataTable";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
+import { StockDecisionPanel } from "@/components/StockDecisionPanel";
 import { StockChart } from "@/components/StockChart";
 import { resolvePriceSeries } from "@/lib/indicators";
-import { getPricesForTicker, watchlist } from "@/lib/mock-data";
+import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import type { DailyPrice } from "@/types";
@@ -28,7 +29,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const chartPrices = mergedPrices;
   const tablePrices = mergedPrices.slice().reverse();
   const latest = mergedPrices[mergedPrices.length - 1];
-  const tickerNews = live?.news ?? [];
+  const tickerNews = live?.news?.length ? live.news : localNews.filter((newsItem) => newsItem.ticker === item.stock.ticker);
   const scoreAnalysis = analyzeStock(latest, tickerNews);
   const sourceLabel = live ? resolvedPrices.source : item.stock.ticker === "RGTI" ? "Excel history" : "Local SIDU historical data";
   const detailItems = watchlist.filter((row) => Boolean(getPricesForTicker(row.stock.ticker)));
@@ -95,6 +96,14 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         <InsightCard label="RSI" value={latest.rsi.toFixed(2)} tone={latest.rsi >= 70 ? "warn" : latest.rsi >= 55 ? "up" : "default"} />
         <InsightCard label="日次データ件数" value={`${mergedPrices.length}件`} tone="blue" />
       </section>
+
+      <StockDecisionPanel
+        stock={item.stock}
+        prices={mergedPrices}
+        news={tickerNews}
+        analysis={scoreAnalysis}
+        sourceLabel={sourceLabel}
+      />
 
       <div className="min-w-0">
         <StockChart prices={chartPrices} ticker={item.stock.ticker} />
