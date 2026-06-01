@@ -1,6 +1,0 @@
-{
-  "/api/fx/usd-jpy/route": "app/api/fx/usd-jpy/route.js",
-  "/api/spot-simulator/ai-comment/route": "app/api/spot-simulator/ai-comment/route.js",
-  "/page": "app/page.js",
-  "/stocks/[ticker]/page": "app/stocks/[ticker]/page.js"
-}
