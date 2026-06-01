@@ -32,6 +32,7 @@ type AiRiskComment = {
   dataFreshness: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  analystView?: string;
   entryPriceComment: string;
   positionSizeComment: string;
   exitPlanComment: string;
@@ -66,6 +67,10 @@ type TechnicalSnapshot = {
   ma50: number;
   volumeRatio: number;
   atrPercent: number;
+  recentHigh20: number;
+  recentLow20: number;
+  recentHigh60: number;
+  recentLow60: number;
   latestDailyDate: string;
   source: string;
 };
@@ -158,6 +163,7 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
       dataFreshness: stringOr(parsed.dataFreshness, fallback.dataFreshness),
       riskLevel: parsed.riskLevel === "低" || parsed.riskLevel === "中" || parsed.riskLevel === "高" ? parsed.riskLevel : fallback.riskLevel,
       confidence: parsed.confidence === "低" || parsed.confidence === "中" || parsed.confidence === "高" ? parsed.confidence : fallback.confidence,
+      analystView: stringOr(parsed.analystView, fallback.analystView ?? ""),
       entryPriceComment: stringOr(parsed.entryPriceComment, fallback.entryPriceComment),
       positionSizeComment: stringOr(parsed.positionSizeComment, fallback.positionSizeComment),
       exitPlanComment: stringOr(parsed.exitPlanComment, fallback.exitPlanComment),
@@ -188,6 +194,7 @@ function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input
     dataFreshness: `価格: ${realtime.quote.source} ${formatDateTime(realtime.quote.asOf)} / 日足: ${realtime.technical.source} ${realtime.technical.latestDailyDate} / 為替: ${realtime.fx.source} ${formatDateTime(realtime.fx.asOf)}`,
     riskLevel: ruleRisk.level,
     confidence: realtime.quote.source.includes("fallback") || realtime.technical.source === "fallback" ? "低" : realtime.news.length ? "中" : "低",
+    analystView: diagnosisMode === "detailed" ? buildFallbackAnalystView(stock, input, realtime, ruleRisk) : undefined,
     entryPriceComment: `入力エントリー価格は診断時点価格から${entryGap >= 0 ? "+" : ""}${entryGap.toFixed(2)}%です。現在付近で入る前提なら、この差が大きいほどシミュレーション結果と実際の約定後リスクがずれます。`,
     positionSizeComment: `投資額は${formatYen(simulation.positionValueJpy)}です。損切り損失が口座全体の許容損失を超える場合は、株数を下げる前提で再計算してください。`,
     exitPlanComment: `利確ラインは${formatNative(simulation.takeProfit.price, input.currency)}、損切りラインは${formatNative(simulation.stopLoss.price, input.currency)}です。エントリー前にどちらを優先するか決めておくと、値動き中の判断ブレを減らせます。`,
@@ -364,9 +371,25 @@ function buildTechnicalSnapshot(prices: DailyPrice[], latestDaily?: DailyPrice, 
     ma50: providedMetrics?.ma50 ?? latest?.ma50 ?? latest?.close ?? 0,
     volumeRatio: providedMetrics?.volumeRatio ?? latest?.volumeRatio ?? 0,
     atrPercent: calculateAtrPercent(prices),
+    recentHigh20: recentHigh(prices, 20, latest?.close ?? 0),
+    recentLow20: recentLow(prices, 20, latest?.close ?? 0),
+    recentHigh60: recentHigh(prices, 60, latest?.close ?? 0),
+    recentLow60: recentLow(prices, 60, latest?.close ?? 0),
     latestDailyDate: latest?.date ?? "unknown",
     source: latest?.source ?? "fallback"
   };
+}
+
+function recentHigh(prices: DailyPrice[], count: number, fallback: number) {
+  const target = prices.slice(-count);
+  if (!target.length) return fallback;
+  return Math.max(...target.map((price) => price.high));
+}
+
+function recentLow(prices: DailyPrice[], count: number, fallback: number) {
+  const target = prices.slice(-count);
+  if (!target.length) return fallback;
+  return Math.min(...target.map((price) => price.low));
 }
 
 function calculateAtrPercent(prices: DailyPrice[]) {
@@ -462,6 +485,31 @@ function stringArrayOr(value: unknown, fallback: string[] | undefined) {
   return items.length ? items : fallback;
 }
 
+function buildFallbackAnalystView(
+  stock: Stock,
+  input: SpotSimulationInput,
+  realtime: Awaited<ReturnType<typeof buildRealtimeContext>>,
+  ruleRisk: RuleRisk
+) {
+  const shortLow = realtime.technical.recentLow20 || realtime.technical.ma20 || realtime.quote.price;
+  const shortHigh = realtime.technical.recentHigh20 || realtime.quote.price;
+  const mediumHigh = Math.max(realtime.technical.recentHigh60 || shortHigh, shortHigh);
+  const danger = Math.min(shortLow, realtime.technical.ma20 || shortLow);
+  const newsTone = realtime.news.length
+    ? `直近ニュースは${realtime.news.map((item) => item.sentiment).join(" / ")}で、材料確認はニュース本文と鮮度を優先して見るべきです。`
+    : "直近ニュースが十分に取得できていないため、材料面の評価はまだ弱いです。";
+
+  return [
+    `私が今の${stock.ticker}をデータだけで評価すると、短期は${formatNative(shortLow, input.currency)}〜${formatNative(shortHigh, input.currency)}のレンジ意識です。`,
+    `今後1〜3か月は、出来高を伴って${formatNative(shortHigh, input.currency)}を再突破できるかが上方向の確認点です。`,
+    `そこを超えて維持できれば、次は60日高値圏の${formatNative(mediumHigh, input.currency)}再挑戦を意識できます。`,
+    `逆に危険シナリオは、${formatNative(danger, input.currency)}を出来高を伴って明確に割ることです。`,
+    `その場合は、テクニカル上の押し目ではなく深い調整として扱う必要があります。`,
+    `${newsTone}`,
+    `現時点の機械判定リスクは${ruleRisk.level}で、主な注意点は${ruleRisk.reasons.join("、") || "データ鮮度と執行価格のずれ"}です。`
+  ].join("\n");
+}
+
 function buildNormalSystemPrompt() {
   return [
     "You are a Japanese risk analyst for a stock cash-position simulator.",
@@ -488,20 +536,31 @@ function buildDetailedSystemPrompt() {
     "Your job is to stress-test the user's entry plan, identify weak assumptions, and give advanced, data-grounded risk-management advice in Japanese.",
     "Be specific and numerical whenever the supplied data supports it. Reference exact levels, percentages, risk-reward, ATR%, stop-loss loss, take-profit net profit, FX rate, RSI, MA20, MA50, volume ratio, data age, and ruleRisk reasons.",
     "Use a professional but direct tone. Avoid generic advice. Every major point must connect to supplied data.",
+    "Do not merely explain or paraphrase the screen data. Synthesize the technical data, news data, scenario table, and ruleRisk into an expert view of what matters most.",
+    "Produce an analystView field that reads like a concise senior analyst note in Japanese. It should feel like: '私が今の [ticker] を評価すると...' followed by short-term range, medium-term conditions, upside re-test conditions, danger scenario, and news interpretation.",
+    "In analystView, you may discuss conditional possibilities such as 'if momentum/news/sector flow continues, a re-test of resistance is possible' and 'if support breaks with volume, deeper correction becomes a risk'. Do not express certainty.",
+    "Use recentHigh20, recentLow20, recentHigh60, recentLow60, MA20, MA50, ATR%, and quote to infer short-term range, resistance, support, and danger levels. Do not invent price levels that are not derived from supplied data.",
+    "Use provided news only. If the provided news does not mention a catalyst, say that current provided news is insufficient to confirm that catalyst. Never invent catalysts such as IPO, government support, earnings, or sector inflow unless present in the news JSON.",
+    "Each review field must start with a clear expert conclusion, then explain the data basis. Good: '損切り幅がATRに対して浅く、通常の値幅で刈られやすい'. Bad: 'RSIは62、MA20は...'.",
+    "When technicals and news point in different directions, explicitly describe the conflict and which risk should dominate the user's attention.",
+    "Rank the top 2 to 3 risk drivers by importance in the summary. The summary should answer: 'What is the main risk in this entry plan, and what should an experienced trader check first?'",
+    "Give conditional advice using if/then language, such as what would make the plan fragile, what data would improve confidence, and what market behavior would invalidate the scenario. Do not phrase it as a buy/sell/hold recommendation.",
     "Analyze entry price quality versus quote: premium/discount to current quote, whether the entry assumption is stale, and how the plan changes if execution price slips.",
     "Analyze position sizing: position value, stop-loss net loss, loss percentage versus position value, concentration risk, and whether the scenario is sensitive to small price moves. Do not prescribe a specific share count.",
     "Analyze exit-plan quality: take-profit, stop-loss, risk-reward, whether the stop is realistic versus ATR/volatility, and whether the plan depends too much on perfect execution.",
-    "Analyze technical context: RSI, MA20, MA50, volume ratio, ATR%, trend alignment, overheat risk, breakdown risk, and volatility regime.",
+    "Analyze technical context: RSI, MA20, MA50, volume ratio, ATR%, trend alignment, overheat risk, breakdown risk, and volatility regime. Convert indicators into an interpretation of market structure, not a list of indicator values.",
     "Analyze execution risks: opening gaps, after-hours moves, spread widening, low liquidity, small-cap volatility, and the possibility that stop-loss execution differs from the modeled stop price.",
     "Analyze FX risk for USD stocks: explain how USD/JPY affects JPY profit/loss and whether FX is a secondary or material driver based on the position value.",
     "Analyze tax/account type: explain taxable account versus NISA impact, net-of-tax outcome, and NISA loss-offset limitation when relevant. Do not provide legal or tax advice.",
-    "Analyze news and data quality: news count, timestamp/freshness, missing news, fallback data, quote age, daily data age, and whether confidence should be reduced.",
+    "Analyze news and data quality: news count, timestamp/freshness, missing news, fallback data, quote age, daily data age, and whether confidence should be reduced. Explain whether news supports the technical setup, contradicts it, or is too weak/stale to matter.",
     "Provide decision-support advice only: define what should be checked before acting, what would invalidate the scenario, and what risk the user is accepting. Do not say the user should enter, buy, sell, hold, or avoid.",
+    "For checklist items, do not write generic items like 'check risk'. Write concrete pre-trade checks such as quote freshness, spread/liquidity, stop distance versus ATR, news timestamp, FX rate, and after-tax outcome.",
     "If data is stale, missing, fallback, or incomplete, explicitly lower confidence and explain why.",
-    "Return strict JSON in Japanese with keys: summary, dataFreshness, riskLevel, confidence, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, stressTest, blindSpots, checklist.",
+    "Return strict JSON in Japanese with keys: summary, dataFreshness, riskLevel, confidence, analystView, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, stressTest, blindSpots, checklist.",
     "riskLevel and confidence must be one of: 低, 中, 高.",
-    "summary must be concise but include the dominant risk, not only a restatement of numbers.",
-    "entryPriceComment, positionSizeComment, exitPlanComment, technicalComment, and newsComment should each contain practical advice based on the data.",
+    "summary must be concise but include the dominant risk and top risk drivers, not a restatement of numbers.",
+    "analystView must be 5 to 9 short Japanese sentences and must include: short-term range view, medium-term condition, upside condition, danger level, and news interpretation.",
+    "entryPriceComment, positionSizeComment, exitPlanComment, technicalComment, and newsComment must each contain practical expert advice based on the data and must avoid pure data narration.",
     "stressTest must be 3 to 5 short strings covering adverse but realistic cases.",
     "blindSpots must be 3 to 5 short strings covering missing data or hidden assumptions.",
     "checklist must be 4 to 6 action-oriented strings. Checklist items must be concrete checks before placing an order, not buy/sell recommendations."

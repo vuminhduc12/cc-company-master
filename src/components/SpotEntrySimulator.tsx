@@ -17,6 +17,7 @@ type AiRiskComment = {
   dataFreshness?: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  analystView?: string;
   entryPriceComment?: string;
   positionSizeComment: string;
   exitPlanComment: string;
@@ -336,6 +337,12 @@ function AiCommentPanel({ comment, mode }: { comment: AiRiskComment; mode: "norm
         <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
           <p className="text-xs font-bold text-slate-300">データ取得時点</p>
           <p className="mt-1 text-xs leading-5 text-slate-400">{comment.dataFreshness}</p>
+        </div>
+      ) : null}
+      {comment.analystView ? (
+        <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
+          <p className="text-xs font-bold text-amber-100">上級者見立て</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.analystView}</p>
         </div>
       ) : null}
       <div className="mt-4 grid gap-3 md:grid-cols-2">

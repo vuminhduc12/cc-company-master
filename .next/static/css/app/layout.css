@@ -886,6 +886,9 @@ video {
 .bg-amber-300\/15 {
   background-color: rgb(252 211 77 / 0.15);
 }
+.bg-amber-300\/\[0\.06\] {
+  background-color: rgb(252 211 77 / 0.06);
+}
 .bg-amber-400 {
   --tw-bg-opacity: 1;
   background-color: rgb(251 191 36 / var(--tw-bg-opacity, 1));
@@ -1167,6 +1170,9 @@ video {
 }
 .leading-6 {
   line-height: 1.5rem;
+}
+.leading-7 {
+  line-height: 1.75rem;
 }
 .leading-tight {
   line-height: 1.25;
