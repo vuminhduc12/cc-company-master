@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { mergePriceSeries } from "@/lib/indicators";
+import { getPricesForTicker } from "@/lib/mock-data";
+import { analyzePatternSimilarity } from "@/lib/pattern-similarity";
 import { fetchStockData } from "@/lib/stock-data";
 import {
   accountTypeLabel,
@@ -246,15 +249,18 @@ async function buildRealtimeContext(
   ]);
 
   const dailyData = dailyResult.status === "fulfilled" ? dailyResult.value : null;
-  const latestDaily = dailyData?.prices.at(-1);
+  const localPrices = getPricesForTicker(stock.ticker) ?? [];
+  const mergedPrices = mergePriceSeries(localPrices, dailyData?.prices ?? []);
+  const latestDaily = mergedPrices.at(-1) ?? dailyData?.prices.at(-1);
   const quote = quoteResult.status === "fulfilled"
     ? quoteResult.value
     : buildFallbackQuote(input, latestDaily, providedMetrics);
   const fx = fxResult.status === "fulfilled" ? fxResult.value : { rate: input.fxRate || 150, source: "入力値", asOf: new Date().toISOString(), ok: false };
-  const technical = buildTechnicalSnapshot(dailyData?.prices ?? [], latestDaily, providedMetrics);
+  const technical = buildTechnicalSnapshot(mergedPrices, latestDaily, providedMetrics);
+  const patternSimilarity = analyzePatternSimilarity(mergedPrices);
   const news = newsResult.status === "fulfilled" ? newsResult.value : providedNews;
 
-  return { quote, fx, technical, news };
+  return { quote, fx, technical, news, patternSimilarity };
 }
 
 async function fetchYahooQuote(ticker: string): Promise<QuoteSnapshot> {
@@ -498,6 +504,11 @@ function buildFallbackAnalystView(
   const newsTone = realtime.news.length
     ? `直近ニュースは${realtime.news.map((item) => item.sentiment).join(" / ")}で、材料確認はニュース本文と鮮度を優先して見るべきです。`
     : "直近ニュースが十分に取得できていないため、材料面の評価はまだ弱いです。";
+  const pattern10 = realtime.patternSimilarity.horizons.find((item) => item.days === 10);
+  const pattern20 = realtime.patternSimilarity.horizons.find((item) => item.days === 20);
+  const patternTone = pattern10 && pattern10.sampleCount
+    ? `過去類似パターンでは10営業日平均が${formatSignedPercent(pattern10.averageReturn)}、上昇確率が${pattern10.winRate.toFixed(0)}%です${pattern20 && pattern20.sampleCount ? `。20営業日の最小/最大は${formatSignedPercent(pattern20.minReturn)}〜${formatSignedPercent(pattern20.maxReturn)}で、値幅リスクも残ります` : ""}。`
+    : "過去類似パターンはサンプル不足のため、今回のシナリオ判断には強く使えません。";
 
   return [
     `私が今の${stock.ticker}をデータだけで評価すると、短期は${formatNative(shortLow, input.currency)}〜${formatNative(shortHigh, input.currency)}のレンジ意識です。`,
@@ -505,6 +516,7 @@ function buildFallbackAnalystView(
     `そこを超えて維持できれば、次は60日高値圏の${formatNative(mediumHigh, input.currency)}再挑戦を意識できます。`,
     `逆に危険シナリオは、${formatNative(danger, input.currency)}を出来高を伴って明確に割ることです。`,
     `その場合は、テクニカル上の押し目ではなく深い調整として扱う必要があります。`,
+    `${patternTone}`,
     `${newsTone}`,
     `現時点の機械判定リスクは${ruleRisk.level}で、主な注意点は${ruleRisk.reasons.join("、") || "データ鮮度と執行価格のずれ"}です。`
   ].join("\n");
@@ -540,6 +552,9 @@ function buildDetailedSystemPrompt() {
     "Produce an analystView field that reads like a concise senior analyst note in Japanese. It should feel like: '私が今の [ticker] を評価すると...' followed by short-term range, medium-term conditions, upside re-test conditions, danger scenario, and news interpretation.",
     "In analystView, you may discuss conditional possibilities such as 'if momentum/news/sector flow continues, a re-test of resistance is possible' and 'if support breaks with volume, deeper correction becomes a risk'. Do not express certainty.",
     "Use recentHigh20, recentLow20, recentHigh60, recentLow60, MA20, MA50, ATR%, and quote to infer short-term range, resistance, support, and danger levels. Do not invent price levels that are not derived from supplied data.",
+    "Use patternSimilarity to compare the current setup with similar historical daily-price patterns. Discuss 5/10/20 trading-day outcomes using sampleCount, averageReturn, medianReturn, winRate, maxReturn, and minReturn. Treat it as probabilistic scenario evidence, not a forecast or guarantee.",
+    "If patternSimilarity.sampleCount is low, explicitly lower confidence. If similar patterns show wide max/min dispersion, explain that the scenario is fragile even when averageReturn is positive.",
+    "In analystView, include one short sentence about past similar patterns, for example whether 10-trading-day and 20-trading-day outcomes lean upward, downward, neutral, or too volatile to rely on.",
     "Use provided news only. If the provided news does not mention a catalyst, say that current provided news is insufficient to confirm that catalyst. Never invent catalysts such as IPO, government support, earnings, or sector inflow unless present in the news JSON.",
     "Each review field must start with a clear expert conclusion, then explain the data basis. Good: '損切り幅がATRに対して浅く、通常の値幅で刈られやすい'. Bad: 'RSIは62、MA20は...'.",
     "When technicals and news point in different directions, explicitly describe the conflict and which risk should dominate the user's attention.",
@@ -574,6 +589,7 @@ function buildDataQuality(realtime: Awaited<ReturnType<typeof buildRealtimeConte
     quoteAgeMinutes,
     fxAgeMinutes,
     newsCount: realtime.news.length,
+    similarPatternCount: realtime.patternSimilarity.sampleCount,
     priceSource: realtime.quote.source,
     fxSource: realtime.fx.source,
     dailySource: realtime.technical.source,
@@ -581,6 +597,10 @@ function buildDataQuality(realtime: Awaited<ReturnType<typeof buildRealtimeConte
     hasRealtimeQuoteFallback: realtime.quote.source.includes("fallback"),
     hasFxFallback: !realtime.fx.ok
   };
+}
+
+function formatSignedPercent(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 function formatYen(value: number) {

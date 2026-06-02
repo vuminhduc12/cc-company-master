@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { analyzePatternSimilarity, type PatternSimilarityResult } from "@/lib/pattern-similarity";
 import type { DailyPrice, NewsItem, Stock, StockScoreAnalysis } from "@/types";
 
 type Props = {
@@ -44,6 +45,7 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
   const neutralNews = currentNews.filter((item) => item.sentiment === "Neutral").length;
   const newsFreshness = useMemo(() => buildNewsFreshness(currentNews, newsFetchedAt), [currentNews, newsFetchedAt]);
   const priceFreshness = useMemo(() => buildPriceFreshness(latest), [latest]);
+  const patternSimilarity = useMemo(() => analyzePatternSimilarity(prices), [prices]);
   const trendLabel = buildTrendLabel(latest);
   const posture = buildPosture(latest, supportLine, resistanceLine, analysis.score, negativeNews);
   const levels: Level[] = [
@@ -130,6 +132,7 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
               <WatchPoint title="ボラ目安" value={`ATR近似 ${calculateAtrPercent(prices).toFixed(2)}%`} tone="warn" />
             </div>
           </div>
+          <PatternSimilarityPanel result={patternSimilarity} stock={stock} />
         </div>
 
         <div className="min-w-0 space-y-4">
@@ -174,6 +177,54 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
         </div>
       </div>
     </section>
+  );
+}
+
+function PatternSimilarityPanel({ result, stock }: { result: PatternSimilarityResult; stock: Stock }) {
+  return (
+    <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.06] p-4">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <p className="text-sm font-bold text-emerald-100">過去類似パターン</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">現在のRSI、出来高倍率、MA位置、MACD、値幅に近い過去日を探し、その後の値動きを集計します。</p>
+        </div>
+        <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-black text-emerald-100">
+          類似 {result.sampleCount}件
+        </span>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-slate-200">{result.summary}</p>
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        {result.horizons.map((item) => <PatternHorizonCard key={item.days} item={item} />)}
+      </div>
+      <div className="mt-4 space-y-2">
+        <p className="text-xs font-bold text-slate-300">近い過去パターン</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {result.matches.slice(0, 4).map((match) => (
+            <div key={match.date} className="rounded-xl border border-white/10 bg-slate-950/45 p-3 text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-black text-slate-100">{match.date}</span>
+                <span className="text-emerald-200">{match.similarity.toFixed(1)}%</span>
+              </div>
+              <p className="mt-2 text-slate-400">終値 {formatPrice(match.close, stock)} / RSI {match.rsi.toFixed(1)} / 出来高 {match.volumeRatio.toFixed(2)}x</p>
+              <p className="mt-1 text-slate-500">5日 {formatSignedPercent(match.return5)} / 10日 {formatSignedPercent(match.return10)} / 20日 {formatSignedPercent(match.return20)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="mt-3 text-[11px] leading-5 text-slate-500">{result.caveat}</p>
+    </div>
+  );
+}
+
+function PatternHorizonCard({ item }: { item: PatternSimilarityResult["horizons"][number] }) {
+  const tone = item.averageReturn > 3 ? "up" : item.averageReturn < -3 ? "down" : "default";
+  return (
+    <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+      <p className="text-[11px] font-bold text-slate-500">{item.days}営業日後</p>
+      <p className={`mt-1 text-lg font-black ${toneText(tone)}`}>{formatSignedPercent(item.averageReturn)}</p>
+      <p className="mt-1 text-xs text-slate-400">上昇確率 {item.winRate.toFixed(0)}%</p>
+      <p className="mt-1 text-[11px] leading-4 text-slate-500">最大 {formatSignedPercent(item.maxReturn)} / 最小 {formatSignedPercent(item.minReturn)}</p>
+    </div>
   );
 }
 
@@ -487,6 +538,11 @@ function minBy(prices: DailyPrice[], key: "high" | "low", fallback: number) {
 
 function formatPrice(value: number, stock: Stock) {
   return isJpyStock(stock) ? `¥${Math.round(value).toLocaleString()}` : `$${value.toFixed(2)}`;
+}
+
+function formatSignedPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 function isJpyStock(stock: Stock) {

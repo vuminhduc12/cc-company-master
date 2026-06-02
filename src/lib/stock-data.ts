@@ -17,6 +17,8 @@ type FetchAttempt = {
   error?: string;
 };
 
+const yahooDailyRange = "5y";
+
 export type StockDataResult = {
   prices: DailyPrice[];
   mode: StockDataMode;
@@ -84,7 +86,7 @@ async function tryFetchYahooFinanceStockData(ticker: string): Promise<FetchAttem
 
 async function fetchYahooFinanceStockData(ticker: string): Promise<StockDataResult> {
   const symbol = normalizeYahooSymbol(ticker);
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1y&interval=1d`;
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${yahooDailyRange}&interval=1d`;
   const response = await fetch(url, {
     headers: { "user-agent": "Mozilla/5.0" },
     next: { revalidate: 0 }
