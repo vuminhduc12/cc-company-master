@@ -15,8 +15,14 @@ export function useAiJobResult() {
     const stored = localStorage.getItem(storageKey);
     if (stored) {
       try {
-        setJobResult(filterHiddenNews(JSON.parse(stored) as AiJobResult));
+        const parsed = JSON.parse(stored) as AiJobResult;
+        if (isUsableStoredResult(parsed)) {
+          setJobResult(filterHiddenNews(parsed));
+        } else {
+          localStorage.removeItem(storageKey);
+        }
       } catch {
+        localStorage.removeItem(storageKey);
         setJobResult(null);
       }
     }
@@ -32,6 +38,17 @@ export function useAiJobResult() {
   }, []);
 
   return jobResult;
+}
+
+function isUsableStoredResult(result: AiJobResult) {
+  return Boolean(
+    result
+    && result.status !== "Error"
+    && Array.isArray(result.news)
+    && Array.isArray(result.tasks)
+    && result.price
+    && result.report
+  );
 }
 
 export function newsIdentity(item: NewsItem) {

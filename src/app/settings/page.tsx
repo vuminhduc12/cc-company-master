@@ -17,6 +17,7 @@ export default function SettingsPage() {
   async function runAiJob() {
     setStatus("running");
     setMessage("AI社員が今日の仕事を実行中です。");
+    const previousStoredResult = localStorage.getItem(storageKey);
     const latest = prices[prices.length - 1];
     const now = new Date().toLocaleString("ja-JP");
     const runningResult: AiJobResult = {
@@ -45,19 +46,17 @@ export default function SettingsPage() {
         })
       });
       const result = await response.json() as AiJobResult;
-      localStorage.setItem(storageKey, JSON.stringify(result));
       setStatus(result.ok ? "completed" : "error");
-      setMessage(result.ok ? `完了しました。Last Run: ${result.lastRun}${result.warning ? ` / Warning: ${result.warning}` : ""}` : `Error: ${result.error ?? "Unknown error"}`);
+      if (result.ok) {
+        localStorage.setItem(storageKey, JSON.stringify(result));
+        setMessage(`完了しました。Last Run: ${result.lastRun}${result.warning ? ` / Warning: ${result.warning}` : ""}`);
+      } else {
+        restoreStoredJobResult(previousStoredResult);
+        setMessage(`Error: ${result.error ?? "Unknown error"}`);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      const now = new Date().toLocaleString("ja-JP");
-      const failedResult: Partial<AiJobResult> = {
-        ok: false,
-        status: "Error",
-        lastRun: now,
-        error: errorMessage
-      };
-      localStorage.setItem(storageKey, JSON.stringify(failedResult));
+      restoreStoredJobResult(previousStoredResult);
       setStatus("error");
       setMessage(`Error: ${errorMessage}`);
     }
@@ -124,4 +123,12 @@ export default function SettingsPage() {
       </section>
     </div>
   );
+}
+
+function restoreStoredJobResult(previousStoredResult: string | null) {
+  if (previousStoredResult) {
+    localStorage.setItem(storageKey, previousStoredResult);
+  } else {
+    localStorage.removeItem(storageKey);
+  }
 }
