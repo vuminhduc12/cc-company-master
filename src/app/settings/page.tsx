@@ -52,13 +52,13 @@ export default function SettingsPage() {
         setMessage(`完了しました。Last Run: ${result.lastRun}${result.warning ? ` / Warning: ${result.warning}` : ""}`);
       } else {
         restoreStoredJobResult(previousStoredResult);
-        setMessage(`Error: ${result.error ?? "Unknown error"}`);
+        setMessage(formatAiJobError(result.error ?? "Unknown error"));
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       restoreStoredJobResult(previousStoredResult);
       setStatus("error");
-      setMessage(`Error: ${errorMessage}`);
+      setMessage(formatAiJobError(errorMessage));
     }
   }
 
@@ -116,13 +116,40 @@ export default function SettingsPage() {
           </button>
         </div>
         {message ? (
-          <p className={status === "error" ? "mt-4 whitespace-pre-line text-sm text-red-300" : message.includes("Warning:") ? "mt-4 whitespace-pre-line text-sm text-yellow-200" : "mt-4 whitespace-pre-line text-sm text-green-300"}>
+          <p className={status === "error" ? "mt-4 rounded-2xl border border-red-300/25 bg-red-400/10 p-4 whitespace-pre-line text-sm leading-6 text-red-100" : message.includes("Warning:") ? "mt-4 rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-4 whitespace-pre-line text-sm leading-6 text-yellow-100" : "mt-4 rounded-2xl border border-green-300/25 bg-green-400/10 p-4 whitespace-pre-line text-sm leading-6 text-green-100"}>
             {message}
           </p>
         ) : null}
       </section>
     </div>
   );
+}
+
+function formatAiJobError(message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes("quota") || lower.includes("exceeded") || lower.includes("rate limit")) {
+    return [
+      "AI Jobは実行されませんでした。",
+      "原因: OpenAI APIまたはNews APIの利用上限に達しています。",
+      "対処: APIの課金/利用上限を確認するか、時間を置いて再実行してください。",
+      "画面の保存済みデータは上書きしていません。"
+    ].join("\n");
+  }
+  if (lower.includes("cron_secret") || lower.includes("invalid")) {
+    return [
+      "AI Jobは実行されませんでした。",
+      "原因: CRON_SECRETが未設定、または入力値が違います。",
+      "対処: .env.localのCRON_SECRETと同じ値を入力してください。"
+    ].join("\n");
+  }
+  if (lower.includes("api key") || lower.includes("openai_api_key") || lower.includes("news_api_key")) {
+    return [
+      "AI Jobは実行されませんでした。",
+      "原因: APIキーが未設定、または無効です。",
+      "対処: .env.localのOPENAI_API_KEY / NEWS_API_KEYを確認してください。"
+    ].join("\n");
+  }
+  return `AI Jobは実行されませんでした。\n原因: ${message}`;
 }
 
 function restoreStoredJobResult(previousStoredResult: string | null) {
