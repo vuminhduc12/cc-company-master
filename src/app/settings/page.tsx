@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { aiTasks, news, prices, report } from "@/lib/mock-data";
 import { scoreStock } from "@/lib/scoring";
+import { useUserWatchlist } from "@/lib/user-watchlist";
 import type { AiJobResult } from "@/types";
 
 const storageKey = "d-finance-ai-job-result";
 
 export default function SettingsPage() {
+  const userWatchlist = useUserWatchlist();
   const [cronSecret, setCronSecret] = useState("");
   const [status, setStatus] = useState<"idle" | "running" | "completed" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -34,7 +36,13 @@ export default function SettingsPage() {
     try {
       const response = await fetch("/api/cron/daily-job", {
         method: "POST",
-        headers: cronSecret ? { "x-cron-secret": cronSecret } : undefined
+        headers: {
+          "content-type": "application/json",
+          ...(cronSecret ? { "x-cron-secret": cronSecret } : {})
+        },
+        body: JSON.stringify({
+          watchlist: userWatchlist.items.map((item) => item.stock)
+        })
       });
       const result = await response.json() as AiJobResult;
       localStorage.setItem(storageKey, JSON.stringify(result));

@@ -38,7 +38,18 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   try {
     const lastRun = nowJst();
     const nextRun = nextRunJst();
-    const targets = watchlist;
+    const manualStocks = source === "manual" ? await parseManualStocks(request) : [];
+    const targets = manualStocks.length
+      ? manualStocks.map((stock) => ({
+        stock,
+        shares: 0,
+        averagePrice: 0,
+        currentPrice: 0,
+        previousClose: 0,
+        status: "Watch" as const,
+        memo: "Manual AI Jobで指定された追加銘柄"
+      }))
+      : watchlist;
     const stockResults: StockAnalysisResult[] = [];
     for (const item of targets) {
       stockResults.push(await buildStockAnalysis(item.stock, hasAiKeys));
@@ -83,6 +94,24 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     }
     return NextResponse.json(result, { status: 500 });
   }
+}
+
+async function parseManualStocks(request: NextRequest): Promise<Stock[]> {
+  const body = await request.json().catch(() => ({})) as { watchlist?: Stock[] };
+  if (!Array.isArray(body.watchlist)) return [];
+
+  const seen = new Set<string>();
+  return body.watchlist.filter((stock): stock is Stock => {
+    if (!stock || typeof stock !== "object") return false;
+    const ticker = String(stock.ticker ?? "").trim().toUpperCase();
+    if (!ticker || seen.has(ticker) || !/^[A-Z0-9.-]{1,12}$/.test(ticker)) return false;
+    seen.add(ticker);
+    stock.ticker = ticker;
+    stock.companyName = String(stock.companyName ?? ticker);
+    stock.sector = String(stock.sector ?? "Unknown");
+    stock.exchange = String(stock.exchange ?? "NASDAQ/NYSE");
+    return true;
+  }).slice(0, 20);
 }
 
 function authorize(request: NextRequest, source: "cron" | "manual") {

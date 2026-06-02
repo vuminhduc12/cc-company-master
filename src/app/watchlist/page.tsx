@@ -44,6 +44,7 @@ export default function WatchlistPage() {
   const [refreshStatus, setRefreshStatus] = useState<"idle" | "running" | "error">("idle");
   const [message, setMessage] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const defaultTickerSet = useMemo(() => new Set(watchlist.map((item) => item.stock.ticker)), []);
 
   useEffect(() => {
     setCustomItems(loadCustomWatchItems());
@@ -165,12 +166,11 @@ export default function WatchlistPage() {
           latestPrice: result.price
         });
       }
-      const defaultTickerSet = new Set(watchlist.map((item) => item.stock.ticker));
       setCustomItems((current) => {
         const refreshedMap = new Map(refreshed.map((item) => [item.stock.ticker, item]));
         const nextCustom = current.map((item) => refreshedMap.get(item.stock.ticker) ?? item);
         refreshed.forEach((item) => {
-          if (!defaultTickerSet.has(item.stock.ticker) && !nextCustom.some((row) => row.stock.ticker === item.stock.ticker)) {
+          if (!nextCustom.some((row) => row.stock.ticker === item.stock.ticker)) {
             nextCustom.push(item);
           }
         });
@@ -196,7 +196,7 @@ export default function WatchlistPage() {
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <WatchStat label="表示銘柄" value={`${visibleItems.length}`} />
-              <WatchStat label="追加銘柄" value={`${customItems.length}`} tone="green" />
+              <WatchStat label="追加銘柄" value={`${customItems.filter((item) => !defaultTickerSet.has(item.stock.ticker)).length}`} tone="green" />
               <WatchStat label="削除済み初期銘柄" value={`${removedTickers.length}`} tone="yellow" />
             </div>
           </div>

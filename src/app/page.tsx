@@ -166,9 +166,15 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Link className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100" href={`/stocks/${selectedItem.stock.ticker}`}>
-                  詳細
-                </Link>
+                {pricesByTicker[selectedItem.stock.ticker] ? (
+                  <Link className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100" href={`/stocks/${selectedItem.stock.ticker}`}>
+                    詳細
+                  </Link>
+                ) : (
+                  <Link className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100" href="/watchlist">
+                    Watchlist
+                  </Link>
+                )}
                 <a className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50" href={selectedFinanceUrl} target="_blank" rel="noreferrer">
                   Google Finance
                 </a>
