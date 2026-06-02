@@ -384,38 +384,42 @@ export default function MarginSimulatorPage() {
         </div>
 
         <div className="space-y-5 min-w-0">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/82 p-5 shadow-xl shadow-black/25 ring-1 ring-white/5">
+          <div className="overflow-hidden rounded-3xl border border-white/10 bg-[#0b1120] shadow-2xl shadow-black/30 ring-1 ring-white/5">
             <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-              <div>
-                <h3 className="text-lg font-bold text-slate-50">株価シナリオ</h3>
-                <p className="mt-1 text-sm text-slate-400">株価ごとの決済後手取り損益と危険ラインを色で確認します。</p>
+              <div className="p-5 pb-0">
+                <p className="text-xs font-black uppercase tracking-[0.20em] text-[#b892ff]">Scenario Chart</p>
+                <h3 className="mt-1 text-xl font-black text-slate-50">株価シナリオ</h3>
+                <p className="mt-1 text-sm text-slate-400">株価ごとの決済後手取り損益と危険ラインを確認します。</p>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs sm:flex">
+              <div className="grid grid-cols-2 gap-2 p-5 pb-0 text-xs sm:flex">
                 <span className="rounded-full bg-green-400/15 px-3 py-1.5 font-semibold text-green-200">利確 {price(targetScenario.price)}</span>
                 <span className="rounded-full bg-red-400/15 px-3 py-1.5 font-semibold text-red-200">損切り {price(stopScenario.price)}</span>
               </div>
             </div>
-            <div className="mt-4 h-[300px] min-w-0">
+            <div className="m-3 mt-4 h-[330px] min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(111,45,168,0.22),transparent_34%),linear-gradient(180deg,#111827,#0b1120)] p-2 sm:m-5 sm:h-[390px] sm:p-4">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={scenarios} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
+                <AreaChart data={scenarios} margin={{ left: 0, right: 14, top: 14, bottom: 4 }}>
                   <defs>
                     <linearGradient id="profit" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
+                      <stop offset="0%" stopColor="#00c805" stopOpacity={0.36} />
+                      <stop offset="52%" stopColor="#00c805" stopOpacity={0.10} />
+                      <stop offset="100%" stopColor="#00c805" stopOpacity={0.01} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid stroke="rgba(148,163,184,0.16)" vertical={false} />
-                  <XAxis dataKey="price" tick={{ fill: "#94a3b8", fontSize: 12 }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} tickLine={false} axisLine={false} width={70} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}千`} />
+                  <CartesianGrid stroke="rgba(148,163,184,0.13)" vertical={false} />
+                  <XAxis dataKey="price" tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: "rgba(148,163,184,0.20)" }} />
+                  <YAxis orientation="right" tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 600 }} tickLine={false} axisLine={false} width={74} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}千`} />
                   <Tooltip
-                    contentStyle={{ background: "#020617", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, color: "#f8fafc" }}
+                    cursor={{ stroke: "rgba(255,255,255,0.28)", strokeDasharray: "4 4" }}
+                    contentStyle={{ background: "#0f172a", border: "1px solid rgba(148,163,184,0.30)", borderRadius: 14, color: "#f8fafc", boxShadow: "0 18px 36px rgba(0,0,0,0.35)" }}
                     formatter={(value, name) => [yen(Number(value)), name === "netPnl" ? "手取り損益" : String(name)]}
                     labelFormatter={(value) => `株価 ${value}円`}
                   />
-                  <ReferenceLine x={inputs.buyPrice} stroke="#38bdf8" strokeDasharray="4 4" />
-                  <ReferenceLine x={summary.marginCallPrice} stroke="#facc15" strokeDasharray="4 4" />
-                  <ReferenceLine x={summary.dangerPrice} stroke="#ef4444" strokeDasharray="4 4" />
-                  <Area type="monotone" dataKey="netPnl" stroke="#22c55e" strokeWidth={2.5} fill="url(#profit)" />
+                  <ReferenceLine x={inputs.buyPrice} stroke="#60a5fa" strokeDasharray="4 6" />
+                  <ReferenceLine x={summary.marginCallPrice} stroke="#facc15" strokeDasharray="4 6" />
+                  <ReferenceLine x={summary.dangerPrice} stroke="#ff3b30" strokeDasharray="4 6" />
+                  <ReferenceLine y={0} stroke="rgba(203,213,225,0.55)" strokeDasharray="5 6" />
+                  <Area type="monotone" dataKey="netPnl" stroke="#00c805" strokeWidth={3.2} fill="url(#profit)" dot={false} activeDot={{ r: 5, fill: "#00c805", stroke: "#0f172a", strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

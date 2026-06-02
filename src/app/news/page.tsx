@@ -4,16 +4,19 @@ import { useMemo, useState } from "react";
 import { NewsCard } from "@/components/NewsCard";
 import { news, watchlist } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
+import { useUserWatchlist } from "@/lib/user-watchlist";
 import { hiddenNewsStorageKey, hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
-import type { NewsItem } from "@/types";
+import type { NewsItem, WatchlistItem } from "@/types";
 
 export default function NewsPage() {
   const jobResult = useAiJobResult();
+  const userWatchlist = useUserWatchlist();
+  const visibleWatchlist = userWatchlist.items.length ? userWatchlist.items : watchlist;
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
   const allVisibleItems = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
   const staleCount = countStaleNews(allVisibleItems);
   const items = filterFreshNews(allVisibleItems);
-  const tickerTabs = useMemo(() => buildTickerTabs(items), [items]);
+  const tickerTabs = useMemo(() => buildTickerTabs(items, visibleWatchlist), [items, visibleWatchlist]);
   const [selectedTicker, setSelectedTicker] = useState("ALL");
   const activeTicker = selectedTicker === "ALL" || tickerTabs.some((tab) => tab.ticker === selectedTicker) ? selectedTicker : "ALL";
   const filteredItems = activeTicker === "ALL" ? items : items.filter((item) => item.ticker === activeTicker);
@@ -39,7 +42,7 @@ export default function NewsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/20" href={financeUrl(activeTicker)} target="_blank" rel="noreferrer">
+            <a className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/20" href={financeUrl(activeTicker, visibleWatchlist)} target="_blank" rel="noreferrer">
               Google Financeで確認 ↗
             </a>
             <div className="rounded-full border border-white/10 bg-slate-950/55 px-4 py-2 text-sm text-slate-300">
@@ -144,17 +147,17 @@ function newsKey(item: { publishedAt: string; ticker: string; title: string; url
   return `${item.ticker}-${item.publishedAt}-${item.url ?? item.title}-${index}`;
 }
 
-function buildTickerTabs(items: typeof news) {
-  return watchlist.map((item) => ({
+function buildTickerTabs(items: typeof news, visibleWatchlist: WatchlistItem[]) {
+  return visibleWatchlist.map((item) => ({
     ticker: item.stock.ticker,
     name: item.stock.companyName,
     count: items.filter((newsItem) => newsItem.ticker === item.stock.ticker).length
   }));
 }
 
-function financeUrl(ticker: string) {
+function financeUrl(ticker: string, visibleWatchlist: WatchlistItem[]) {
   if (ticker === "ALL") return "https://www.google.com/finance";
-  const stock = watchlist.find((item) => item.stock.ticker === ticker)?.stock;
+  const stock = visibleWatchlist.find((item) => item.stock.ticker === ticker)?.stock;
   const exchange = stock?.exchange === "NYSE" ? "NYSE" : stock?.exchange === "NASDAQ" ? "NASDAQ" : "";
   return exchange ? `https://www.google.com/finance/quote/${ticker}:${exchange}` : `https://www.google.com/finance/search?q=${encodeURIComponent(ticker)}`;
 }
