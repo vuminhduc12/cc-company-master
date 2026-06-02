@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import type { DailyPrice, NewsItem, Stock, StockScoreAnalysis } from "@/types";
 
 type Props = {
@@ -18,6 +19,11 @@ type Level = {
 };
 
 export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel }: Props) {
+  const [currentNews, setCurrentNews] = useState(news);
+  const [newsSource, setNewsSource] = useState(news.length ? news[0].source : "未取得");
+  const [newsFetchedAt, setNewsFetchedAt] = useState("");
+  const [newsRefreshStatus, setNewsRefreshStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [newsWarning, setNewsWarning] = useState("");
   const latest = prices[prices.length - 1];
   const recent20 = prices.slice(-20);
   const recent60 = prices.slice(-60);
@@ -33,9 +39,11 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
     .filter((price) => price.volumeRatio >= 1.5)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4);
-  const positiveNews = news.filter((item) => item.sentiment === "Positive").length;
-  const negativeNews = news.filter((item) => item.sentiment === "Negative").length;
-  const neutralNews = news.filter((item) => item.sentiment === "Neutral").length;
+  const positiveNews = currentNews.filter((item) => item.sentiment === "Positive").length;
+  const negativeNews = currentNews.filter((item) => item.sentiment === "Negative").length;
+  const neutralNews = currentNews.filter((item) => item.sentiment === "Neutral").length;
+  const newsFreshness = useMemo(() => buildNewsFreshness(currentNews, newsFetchedAt), [currentNews, newsFetchedAt]);
+  const priceFreshness = useMemo(() => buildPriceFreshness(latest), [latest]);
   const trendLabel = buildTrendLabel(latest);
   const posture = buildPosture(latest, supportLine, resistanceLine, analysis.score, negativeNews);
   const levels: Level[] = [
@@ -44,6 +52,29 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
     { label: "危険ライン", value: dangerLine, detail: "MA50/短期支持線を割る水準。出来高を伴う下抜けは警戒。", tone: "danger" },
     { label: "60日高値圏", value: extensionLine, detail: "中期で再挑戦できるかを見る抵抗帯。", tone: "neutral" }
   ];
+
+  async function refreshNews() {
+    setNewsRefreshStatus("loading");
+    setNewsWarning("");
+
+    try {
+      const response = await fetch("/api/news/latest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stock })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "ニュース取得に失敗しました。");
+      setCurrentNews(data.news ?? []);
+      setNewsSource(data.source ?? "NewsAPI");
+      setNewsFetchedAt(data.fetchedAt ?? new Date().toISOString());
+      setNewsWarning(data.warning ?? "");
+      setNewsRefreshStatus("idle");
+    } catch (error) {
+      setNewsRefreshStatus("error");
+      setNewsWarning(error instanceof Error ? error.message : "ニュース取得に失敗しました。");
+    }
+  }
 
   return (
     <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/82 shadow-xl shadow-black/25 ring-1 ring-white/5">
@@ -109,7 +140,17 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
             resistanceLine={resistanceLine}
             dangerLine={dangerLine}
             high60={high60}
-            newsCount={news.length}
+            newsCount={currentNews.length}
+          />
+          <DataFreshnessPanel
+            priceSource={sourceLabel}
+            priceFreshness={priceFreshness}
+            newsSource={newsSource}
+            newsFreshness={newsFreshness}
+            newsCount={currentNews.length}
+            newsWarning={newsWarning}
+            refreshStatus={newsRefreshStatus}
+            onRefreshNews={refreshNews}
           />
           <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
             <p className="text-sm font-bold text-slate-100">出来高急増日</p>
@@ -126,13 +167,86 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
           <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
             <p className="text-sm font-bold text-slate-100">直近ニュース材料</p>
             <div className="mt-3 space-y-3">
-              {news.slice(0, 3).map((item) => <NewsSignal key={`${item.publishedAt}-${item.title}-${item.source}`} item={item} />)}
-              {!news.length ? <p className="text-xs leading-5 text-slate-500">この銘柄のニュースはまだ取得されていません。ニュース未取得は材料なしではなく、データ不足として扱います。</p> : null}
+              {currentNews.slice(0, 3).map((item) => <NewsSignal key={`${item.publishedAt}-${item.title}-${item.source}`} item={item} />)}
+              {!currentNews.length ? <p className="text-xs leading-5 text-slate-500">この銘柄のニュースはまだ取得されていません。ニュース未取得は材料なしではなく、データ不足として扱います。</p> : null}
             </div>
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function DataFreshnessPanel({
+  priceSource,
+  priceFreshness,
+  newsSource,
+  newsFreshness,
+  newsCount,
+  newsWarning,
+  refreshStatus,
+  onRefreshNews
+}: {
+  priceSource: string;
+  priceFreshness: Freshness;
+  newsSource: string;
+  newsFreshness: Freshness;
+  newsCount: number;
+  newsWarning: string;
+  refreshStatus: "idle" | "loading" | "error";
+  onRefreshNews: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div>
+          <p className="text-sm font-bold text-slate-100">データ鮮度</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">価格・ニュースの取得元と鮮度を確認します。</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefreshNews}
+          disabled={refreshStatus === "loading"}
+          className="h-10 rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-3 text-xs font-black text-cyan-100 transition hover:bg-cyan-300/20 disabled:cursor-wait disabled:opacity-60"
+        >
+          {refreshStatus === "loading" ? "取得中..." : "ニュース再取得"}
+        </button>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <FreshnessTile label="価格" source={priceSource} freshness={priceFreshness} />
+        <FreshnessTile label={`ニュース ${newsCount}件`} source={newsSource} freshness={newsFreshness} />
+      </div>
+      {newsWarning || refreshStatus === "error" ? (
+        <p className="mt-3 rounded-xl border border-yellow-300/25 bg-yellow-300/10 p-3 text-xs leading-5 text-yellow-100">
+          {newsWarning || "ニュース取得でエラーが発生しました。"}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+type Freshness = {
+  label: string;
+  detail: string;
+  tone: "fresh" | "stale" | "unknown";
+};
+
+function FreshnessTile({ label, source, freshness }: { label: string; source: string; freshness: Freshness }) {
+  const className = freshness.tone === "fresh"
+    ? "border-emerald-300/25 bg-emerald-300/[0.06] text-emerald-100"
+    : freshness.tone === "stale"
+      ? "border-yellow-300/25 bg-yellow-300/[0.08] text-yellow-100"
+      : "border-white/10 bg-white/[0.04] text-slate-100";
+
+  return (
+    <div className={`rounded-xl border p-3 ${className}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-black">{label}</p>
+        <span className="rounded-full border border-white/10 bg-slate-950/35 px-2 py-0.5 text-[10px] font-bold">{freshness.label}</span>
+      </div>
+      <p className="mt-2 break-words text-[11px] leading-5 text-slate-400">{source}</p>
+      <p className="mt-1 text-[11px] leading-5 text-slate-400">{freshness.detail}</p>
+    </div>
   );
 }
 
@@ -280,6 +394,58 @@ function NewsSignal({ item }: { item: NewsItem }) {
       <p className="mt-2 text-[11px] text-slate-600">{item.publishedAt} / Impact {item.impactScore}</p>
     </article>
   );
+}
+
+function buildPriceFreshness(latest: DailyPrice): Freshness {
+  const ageDays = ageInDays(`${latest.date}T00:00:00Z`);
+  if (!Number.isFinite(ageDays)) {
+    return { label: "不明", detail: `日付: ${latest.date || "unknown"}`, tone: "unknown" };
+  }
+  if (ageDays <= 3) {
+    return { label: "新しい", detail: `日足: ${latest.date}`, tone: "fresh" };
+  }
+  return { label: "要確認", detail: `日足: ${latest.date} / ${Math.round(ageDays)}日前`, tone: "stale" };
+}
+
+function buildNewsFreshness(items: NewsItem[], fetchedAt: string): Freshness {
+  const latestPublished = items
+    .map((item) => item.publishedAt)
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a))[0];
+  const targetDate = fetchedAt || latestPublished;
+  if (!targetDate) {
+    return { label: "未取得", detail: "ニュース取得履歴なし", tone: "unknown" };
+  }
+
+  const ageDays = ageInDays(targetDate);
+  const base = fetchedAt ? `取得: ${formatDateTime(targetDate)}` : `最新記事: ${latestPublished}`;
+  if (!Number.isFinite(ageDays)) {
+    return { label: "不明", detail: base, tone: "unknown" };
+  }
+  if (ageDays <= 1) {
+    return { label: "新しい", detail: base, tone: "fresh" };
+  }
+  if (ageDays <= 3) {
+    return { label: "確認", detail: base, tone: "unknown" };
+  }
+  return { label: "古い", detail: `${base} / ${Math.round(ageDays)}日前`, tone: "stale" };
+}
+
+function ageInDays(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return Number.NaN;
+  return (Date.now() - date.getTime()) / 86400000;
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function buildTrendLabel(latest: DailyPrice) {

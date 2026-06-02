@@ -9,14 +9,23 @@ export function mergeLatestPrice(prices: DailyPrice[], latest?: DailyPrice | nul
   return [...prices.filter((price) => price.date !== latest.date), latest].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export function mergePriceSeries(localPrices: DailyPrice[], livePrices?: DailyPrice[] | null) {
+  if (!livePrices?.length) return localPrices;
+  const byDate = new Map(localPrices.map((price) => [price.date, price]));
+  for (const price of livePrices) {
+    byDate.set(price.date, price);
+  }
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export function resolvePriceSeries(localPrices: DailyPrice[], livePrices?: DailyPrice[] | null, livePrice?: DailyPrice | null) {
   const localLatest = latestPrice(localPrices);
   const liveSeriesLatest = livePrices?.length ? latestPrice(livePrices) : null;
   const useLiveSeries = Boolean(livePrices?.length && liveSeriesLatest && shouldUseLivePrice(localLatest, liveSeriesLatest));
   if (useLiveSeries && livePrices) {
     return {
-      prices: livePrices,
-      source: "API full daily history + AI analysis",
+      prices: mergePriceSeries(localPrices, livePrices),
+      source: "Local full history + API latest daily history",
       rejectedLive: false
     };
   }
