@@ -1,4 +1,5 @@
 import { getPricesForTicker } from "@/lib/mock-data";
+import { loadSavedPricesForTicker } from "@/lib/supabase";
 import type { DailyPrice } from "@/types";
 
 type RawDailyPrice = {
@@ -22,7 +23,7 @@ const yahooDailyRange = "5y";
 export type StockDataResult = {
   prices: DailyPrice[];
   mode: StockDataMode;
-  provider: StockDataProvider | "local";
+  provider: StockDataProvider | "saved" | "local";
   warning?: string;
 };
 
@@ -54,6 +55,16 @@ export async function fetchStockData(ticker: string): Promise<StockDataResult> {
       return withWarning(yahooAttempt.result, warnings.join(" "));
     }
     if (yahooAttempt.error) errors.push(`Yahoo Finance: ${yahooAttempt.error}`);
+  }
+
+  const savedPrices = await loadSavedPricesForTicker(ticker);
+  if (savedPrices.length) {
+    return {
+      prices: savedPrices,
+      mode: "live",
+      provider: "saved",
+      warning: [...warnings, `${ticker}: 外部API取得に失敗したため、Manual AI Jobで保存済みの履歴データを表示しています。`].join(" ")
+    };
   }
 
   if (fallback) {

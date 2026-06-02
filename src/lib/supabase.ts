@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AiJobResult } from "@/types";
+import type { AiJobResult, DailyPrice, NewsItem } from "@/types";
 
 export function hasSupabaseConfig() {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -38,6 +38,50 @@ export async function loadLatestJobResult() {
     .maybeSingle();
   if (error || !data?.result) return null;
   return data.result as AiJobResult;
+}
+
+export async function loadSavedPricesForTicker(ticker: string) {
+  const supabase = createServerSupabase();
+  if (!supabase) return [];
+
+  const { data: stock, error: stockError } = await supabase
+    .from("stocks")
+    .select("id")
+    .eq("ticker", ticker)
+    .maybeSingle();
+  if (stockError || !stock?.id) return [];
+
+  const { data, error } = await supabase
+    .from("daily_prices")
+    .select("*")
+    .eq("stock_id", stock.id)
+    .order("date", { ascending: true });
+  if (error || !data?.length) return [];
+
+  return data.map((row) => dailyPriceFromRow(row as SavedDailyPriceRow));
+}
+
+export async function loadSavedNewsForTicker(ticker: string) {
+  const supabase = createServerSupabase();
+  if (!supabase) return [];
+
+  const { data: stock, error: stockError } = await supabase
+    .from("stocks")
+    .select("id")
+    .eq("ticker", ticker)
+    .maybeSingle();
+  if (stockError || !stock?.id) return [];
+
+  const { data, error } = await supabase
+    .from("news")
+    .select("*")
+    .eq("stock_id", stock.id)
+    .order("published_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error || !data?.length) return [];
+
+  return data.map((row) => newsFromRow(row as SavedNewsRow, ticker));
 }
 
 export async function saveJobResult(result: AiJobResult) {
@@ -91,8 +135,10 @@ export async function saveJobResult(result: AiJobResult) {
       pattern: priceRow.pattern,
       source: priceRow.source
     }));
-    const { error: priceError } = await supabase.from("daily_prices").upsert(priceRows, { onConflict: "stock_id,date" });
-    if (priceError) throw new Error(`Supabase daily_prices save failed (${item.stock.ticker}): ${priceError.message}`);
+    for (const chunk of chunkRows(priceRows, 500)) {
+      const { error: priceError } = await supabase.from("daily_prices").upsert(chunk, { onConflict: "stock_id,date" });
+      if (priceError) throw new Error(`Supabase daily_prices save failed (${item.stock.ticker}): ${priceError.message}`);
+    }
 
     if (item.news.length > 0) {
       const newsRows = uniqueNewsRows(item.news.map((newsItem) => ({
@@ -108,8 +154,10 @@ export async function saveJobResult(result: AiJobResult) {
         opportunity: newsItem.opportunity,
         ai_comment: newsItem.aiComment
       })));
-      const { error: newsError } = await supabase.from("news").upsert(newsRows, { onConflict: "stock_id,published_at,title,source" });
-      if (newsError) throw new Error(`Supabase news save failed (${item.stock.ticker}): ${newsError.message}`);
+      for (const chunk of chunkRows(newsRows, 100)) {
+        const { error: newsError } = await supabase.from("news").upsert(chunk, { onConflict: "stock_id,published_at,title,source" });
+        if (newsError) throw new Error(`Supabase news save failed (${item.stock.ticker}): ${newsError.message}`);
+      }
     }
   }
 
@@ -165,6 +213,43 @@ type NewsRow = {
   ai_comment: string;
 };
 
+type SavedDailyPriceRow = {
+  date: string;
+  open: number | string | null;
+  high: number | string | null;
+  low: number | string | null;
+  close: number | string | null;
+  volume: number | string | null;
+  change_percent: number | string | null;
+  volume_average20: number | string | null;
+  volume_ratio: number | string | null;
+  intraday_range_percent: number | string | null;
+  rsi: number | string | null;
+  macd: number | string | null;
+  macd_signal: number | string | null;
+  macd_histogram: number | string | null;
+  macd_direction: string | null;
+  ma5: number | string | null;
+  ma20: number | string | null;
+  ma50: number | string | null;
+  score: number | string | null;
+  pattern: string | null;
+  source: string | null;
+};
+
+type SavedNewsRow = {
+  title: string;
+  url?: string | null;
+  source?: string | null;
+  published_at?: string | null;
+  summary?: string | null;
+  sentiment?: string | null;
+  impact_score?: number | string | null;
+  risk?: string | null;
+  opportunity?: string | null;
+  ai_comment?: string | null;
+};
+
 function uniqueNewsRows(rows: NewsRow[]) {
   const seen = new Set<string>();
   return rows.filter((row) => {
@@ -173,4 +258,75 @@ function uniqueNewsRows(rows: NewsRow[]) {
     seen.add(key);
     return true;
   });
+}
+
+function dailyPriceFromRow(row: SavedDailyPriceRow): DailyPrice {
+  const close = numberFrom(row.close);
+  const volumeAverage20 = numberFrom(row.volume_average20);
+  const volumeRatio = numberFrom(row.volume_ratio);
+  const rsi = numberFrom(row.rsi) || 50;
+  const score = numberFrom(row.score);
+  return {
+    date: String(row.date),
+    open: numberFrom(row.open),
+    high: numberFrom(row.high),
+    low: numberFrom(row.low),
+    close,
+    volume: numberFrom(row.volume),
+    changePercent: numberFrom(row.change_percent),
+    volumeAverage20,
+    volumeRatio,
+    intradayRangePercent: numberFrom(row.intraday_range_percent),
+    rsi,
+    macd: numberFrom(row.macd),
+    macdSignal: numberFrom(row.macd_signal),
+    macdHistogram: numberFrom(row.macd_histogram),
+    macdDirection: row.macd_direction === "低下" ? "低下" : "上昇",
+    rsiSignal: rsi >= 70 ? "過熱" : rsi >= 55 ? "強気圏" : rsi <= 35 ? "弱気圏" : "中立",
+    high20Breakout: "",
+    ma5: numberFrom(row.ma5) || close,
+    ma20: numberFrom(row.ma20) || close,
+    ma50: numberFrom(row.ma50) || close,
+    volumeAverage: volumeAverage20,
+    closeAfter5Days: null,
+    changeAfter5Days: null,
+    closeAfter10Days: null,
+    changeAfter10Days: null,
+    score,
+    pattern: row.pattern ?? "",
+    comment: "Manual AI Jobで保存済みの履歴です。",
+    source: row.source ? `${row.source} / Supabase saved` : "Supabase saved history"
+  };
+}
+
+function newsFromRow(row: SavedNewsRow, ticker: string): NewsItem {
+  const sentiment = row.sentiment === "Positive" || row.sentiment === "Negative" || row.sentiment === "Neutral"
+    ? row.sentiment
+    : "Neutral";
+  return {
+    title: row.title,
+    url: row.url ?? undefined,
+    source: row.source ?? "Supabase saved news",
+    publishedAt: row.published_at ?? "",
+    ticker,
+    summary: row.summary ?? "保存済みニュースです。",
+    sentiment,
+    impactScore: numberFrom(row.impact_score) || 5,
+    risk: row.risk ?? "保存済み分析を表示しています。",
+    opportunity: row.opportunity ?? "保存済み分析を表示しています。",
+    aiComment: row.ai_comment ?? "Manual AI Jobで保存済みのニュース分析です。"
+  };
+}
+
+function numberFrom(value: number | string | null | undefined) {
+  const numberValue = Number(value ?? 0);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function chunkRows<T>(rows: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+  return chunks;
 }

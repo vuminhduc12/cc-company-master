@@ -3,13 +3,16 @@
 import { useMemo, useState } from "react";
 import { NewsCard } from "@/components/NewsCard";
 import { news, watchlist } from "@/lib/mock-data";
+import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
 import { hiddenNewsStorageKey, hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
 import type { NewsItem } from "@/types";
 
 export default function NewsPage() {
   const jobResult = useAiJobResult();
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
-  const items = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
+  const allVisibleItems = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
+  const staleCount = countStaleNews(allVisibleItems);
+  const items = filterFreshNews(allVisibleItems);
   const tickerTabs = useMemo(() => buildTickerTabs(items), [items]);
   const [selectedTicker, setSelectedTicker] = useState("ALL");
   const activeTicker = selectedTicker === "ALL" || tickerTabs.some((tab) => tab.ticker === selectedTicker) ? selectedTicker : "ALL";
@@ -32,7 +35,7 @@ export default function NewsPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">News Intelligence</p>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">AIニュース分析</h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              {jobResult ? `海外ニュースを日本語で分析 / 最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}。Watchlist銘柄ごとにニュースを切り替えて確認できます。
+              {jobResult ? `海外ニュースを日本語で分析 / 最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}。{freshNewsWindowDays}日以内のニュースだけを自動表示します。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -41,6 +44,9 @@ export default function NewsPage() {
             </a>
             <div className="rounded-full border border-white/10 bg-slate-950/55 px-4 py-2 text-sm text-slate-300">
               {jobResult ? "Supabase / 最新AI分析" : "mock-data"}
+            </div>
+            <div className="rounded-full border border-yellow-300/25 bg-yellow-300/10 px-4 py-2 text-sm text-yellow-100">
+              古いニュース非表示: {staleCount}件
             </div>
           </div>
         </div>
@@ -87,7 +93,9 @@ export default function NewsPage() {
       </div>
       {filteredItems.length === 0 ? (
         <div className="rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-5 text-sm leading-6 text-yellow-100">
-          この銘柄のニュースはまだありません。Manual AI Job または Cron が成功すると、Watchlist銘柄ごとのニュースがここに表示されます。
+          {allVisibleItems.length > 0
+            ? `${freshNewsWindowDays}日以内のニュースがないため非表示です。Manual AI Jobで最新ニュースを取得してください。`
+            : "この銘柄のニュースはまだありません。Manual AI Job または Cron が成功すると、Watchlist銘柄ごとのニュースがここに表示されます。"}
         </div>
       ) : null}
     </div>

@@ -36,6 +36,7 @@ type AiRiskComment = {
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
   analystView?: string;
+  scenarioPrediction?: string;
   entryPriceComment: string;
   positionSizeComment: string;
   exitPlanComment: string;
@@ -103,10 +104,11 @@ export async function POST(request: Request) {
     const fallback = buildRuleBasedComment(payload, diagnosisMode);
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, analysis: fallback, realtime: enrichment, ruleRisk, simulation });
+      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, analysis: fallback, realtime: enrichment, ruleRisk, simulation, warning: "OPENAI_API_KEY is not configured." });
     }
 
     const prompt = diagnosisMode === "detailed" ? buildDetailedSystemPrompt() : buildNormalSystemPrompt();
+    const model = getOpenAiModel(diagnosisMode);
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -114,8 +116,8 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: diagnosisMode === "detailed" ? "gpt-5.5" : "gpt-4o-mini",
-        temperature: 0.2,
+        model,
+        temperature: diagnosisMode === "detailed" ? 0.35 : 0.2,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -141,13 +143,13 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, analysis: fallback, realtime: enrichment, ruleRisk, simulation, warning: `OpenAI API returned ${response.status}` });
+      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, model, analysis: fallback, realtime: enrichment, ruleRisk, simulation, warning: `OpenAI API returned ${response.status}` });
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     const parsed = parseAiComment(content, fallback);
-    return NextResponse.json({ ok: true, mode: "ai", diagnosisMode, analysis: parsed, realtime: enrichment, ruleRisk, simulation });
+    return NextResponse.json({ ok: true, mode: "ai", diagnosisMode, model, analysis: parsed, realtime: enrichment, ruleRisk, simulation });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Unexpected error" },
@@ -167,6 +169,7 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
       riskLevel: parsed.riskLevel === "低" || parsed.riskLevel === "中" || parsed.riskLevel === "高" ? parsed.riskLevel : fallback.riskLevel,
       confidence: parsed.confidence === "低" || parsed.confidence === "中" || parsed.confidence === "高" ? parsed.confidence : fallback.confidence,
       analystView: stringOr(parsed.analystView, fallback.analystView ?? ""),
+      scenarioPrediction: stringOr(parsed.scenarioPrediction, fallback.scenarioPrediction ?? ""),
       entryPriceComment: stringOr(parsed.entryPriceComment, fallback.entryPriceComment),
       positionSizeComment: stringOr(parsed.positionSizeComment, fallback.positionSizeComment),
       exitPlanComment: stringOr(parsed.exitPlanComment, fallback.exitPlanComment),
@@ -198,6 +201,7 @@ function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input
     riskLevel: ruleRisk.level,
     confidence: realtime.quote.source.includes("fallback") || realtime.technical.source === "fallback" ? "低" : realtime.news.length ? "中" : "低",
     analystView: diagnosisMode === "detailed" ? buildFallbackAnalystView(stock, input, realtime, ruleRisk) : undefined,
+    scenarioPrediction: diagnosisMode === "detailed" ? buildFallbackScenarioPrediction(stock, input, realtime, ruleRisk) : undefined,
     entryPriceComment: `入力エントリー価格は診断時点価格から${entryGap >= 0 ? "+" : ""}${entryGap.toFixed(2)}%です。現在付近で入る前提なら、この差が大きいほどシミュレーション結果と実際の約定後リスクがずれます。`,
     positionSizeComment: `投資額は${formatYen(simulation.positionValueJpy)}です。損切り損失が口座全体の許容損失を超える場合は、株数を下げる前提で再計算してください。`,
     exitPlanComment: `利確ラインは${formatNative(simulation.takeProfit.price, input.currency)}、損切りラインは${formatNative(simulation.stopLoss.price, input.currency)}です。エントリー前にどちらを優先するか決めておくと、値動き中の判断ブレを減らせます。`,
@@ -522,6 +526,39 @@ function buildFallbackAnalystView(
   ].join("\n");
 }
 
+function buildFallbackScenarioPrediction(
+  stock: Stock,
+  input: SpotSimulationInput,
+  realtime: Awaited<ReturnType<typeof buildRealtimeContext>>,
+  ruleRisk: RuleRisk
+) {
+  const support = Math.min(realtime.technical.recentLow20 || realtime.quote.price, realtime.technical.ma20 || realtime.quote.price);
+  const resistance = realtime.technical.recentHigh20 || realtime.quote.price;
+  const nextResistance = Math.max(realtime.technical.recentHigh60 || resistance, resistance);
+  const pattern10 = realtime.patternSimilarity.horizons.find((item) => item.days === 10);
+  const pattern20 = realtime.patternSimilarity.horizons.find((item) => item.days === 20);
+  const trendIsConstructive = realtime.quote.price >= realtime.technical.ma20 && realtime.technical.ma20 >= realtime.technical.ma50;
+  const volumeIsActive = realtime.technical.volumeRatio >= 1.2;
+  const shortBias = trendIsConstructive && volumeIsActive
+    ? "上値再テスト寄り"
+    : realtime.quote.price < realtime.technical.ma20
+      ? "下値確認優先"
+      : "中立から方向待ち";
+  const patternText = pattern10?.sampleCount
+    ? `過去類似では10営業日平均${formatSignedPercent(pattern10.averageReturn)}、上昇確率${pattern10.winRate.toFixed(0)}%です${pattern20?.sampleCount ? `。20営業日の範囲は${formatSignedPercent(pattern20.minReturn)}〜${formatSignedPercent(pattern20.maxReturn)}です` : ""}。`
+    : "過去類似パターンはサンプル不足で、予測材料としては弱いです。";
+  const confidence = ruleRisk.level === "高" || !pattern10?.sampleCount ? "低め" : realtime.news.length ? "中程度" : "限定的";
+
+  return [
+    `${stock.ticker}のリアルタイム取得データで見ると、今後1〜2週間の基本シナリオは「${shortBias}」です。`,
+    `上方向は${formatNative(resistance, input.currency)}を出来高を伴って上抜け、維持できるかが確認点です。`,
+    `その条件がそろう場合、次の意識ラインは直近60日高値圏の${formatNative(nextResistance, input.currency)}です。`,
+    `下方向の危険シナリオは${formatNative(support, input.currency)}を明確に割り、終値で戻せない動きです。`,
+    `${patternText}`,
+    `この予測の信頼度は${confidence}です。これは売買指示ではなく、現在データから作る条件付きシナリオです。`
+  ].join("\n");
+}
+
 function buildNormalSystemPrompt() {
   return [
     "You are a Japanese risk analyst for a stock cash-position simulator.",
@@ -534,6 +571,11 @@ function buildNormalSystemPrompt() {
     "Return strict JSON with keys: summary, dataFreshness, riskLevel, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, checklist.",
     "riskLevel must be one of: 低, 中, 高. checklist must be 3 to 5 short Japanese strings."
   ].join(" ");
+}
+
+function getOpenAiModel(mode: "normal" | "detailed") {
+  if (mode === "detailed") return process.env.OPENAI_DETAILED_MODEL || "gpt-4o";
+  return process.env.OPENAI_NORMAL_MODEL || "gpt-4o-mini";
 }
 
 function buildDetailedSystemPrompt() {
@@ -550,6 +592,9 @@ function buildDetailedSystemPrompt() {
     "Use a professional but direct tone. Avoid generic advice. Every major point must connect to supplied data.",
     "Do not merely explain or paraphrase the screen data. Synthesize the technical data, news data, scenario table, and ruleRisk into an expert view of what matters most.",
     "Produce an analystView field that reads like a concise senior analyst note in Japanese. It should feel like: '私が今の [ticker] を評価すると...' followed by short-term range, medium-term conditions, upside re-test conditions, danger scenario, and news interpretation.",
+    "Produce a scenarioPrediction field. It must be a conditional real-time scenario forecast based only on supplied quote, daily history, technicals, news, FX, ruleRisk, scenarioTable, and patternSimilarity.",
+    "scenarioPrediction must include: 1-2 week base scenario, 1-3 month conditional scenario, upside trigger, downside invalidation/danger level, past similar-pattern evidence, and confidence limitation.",
+    "Do not call scenarioPrediction a certainty. Use phrases like '可能性', '条件付き', '優先シナリオ', and '警戒シナリオ'.",
     "In analystView, you may discuss conditional possibilities such as 'if momentum/news/sector flow continues, a re-test of resistance is possible' and 'if support breaks with volume, deeper correction becomes a risk'. Do not express certainty.",
     "Use recentHigh20, recentLow20, recentHigh60, recentLow60, MA20, MA50, ATR%, and quote to infer short-term range, resistance, support, and danger levels. Do not invent price levels that are not derived from supplied data.",
     "Use patternSimilarity to compare the current setup with similar historical daily-price patterns. Discuss 5/10/20 trading-day outcomes using sampleCount, averageReturn, medianReturn, winRate, maxReturn, and minReturn. Treat it as probabilistic scenario evidence, not a forecast or guarantee.",
@@ -571,10 +616,11 @@ function buildDetailedSystemPrompt() {
     "Provide decision-support advice only: define what should be checked before acting, what would invalidate the scenario, and what risk the user is accepting. Do not say the user should enter, buy, sell, hold, or avoid.",
     "For checklist items, do not write generic items like 'check risk'. Write concrete pre-trade checks such as quote freshness, spread/liquidity, stop distance versus ATR, news timestamp, FX rate, and after-tax outcome.",
     "If data is stale, missing, fallback, or incomplete, explicitly lower confidence and explain why.",
-    "Return strict JSON in Japanese with keys: summary, dataFreshness, riskLevel, confidence, analystView, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, stressTest, blindSpots, checklist.",
+    "Return strict JSON in Japanese with keys: summary, dataFreshness, riskLevel, confidence, analystView, scenarioPrediction, entryPriceComment, positionSizeComment, exitPlanComment, taxComment, fxComment, technicalComment, newsComment, stressTest, blindSpots, checklist.",
     "riskLevel and confidence must be one of: 低, 中, 高.",
     "summary must be concise but include the dominant risk and top risk drivers, not a restatement of numbers.",
     "analystView must be 5 to 9 short Japanese sentences and must include: short-term range view, medium-term condition, upside condition, danger level, and news interpretation.",
+    "scenarioPrediction must be 5 to 8 short Japanese sentences and must not repeat analystView verbatim.",
     "entryPriceComment, positionSizeComment, exitPlanComment, technicalComment, and newsComment must each contain practical expert advice based on the data and must avoid pure data narration.",
     "stressTest must be 3 to 5 short strings covering adverse but realistic cases.",
     "blindSpots must be 3 to 5 short strings covering missing data or hidden assumptions.",

@@ -2,12 +2,15 @@
 
 import { NewsCard } from "@/components/NewsCard";
 import { news, report } from "@/lib/mock-data";
+import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 
 export default function ReportsPage() {
   const jobResult = useAiJobResult();
   const currentReport = jobResult?.report ?? report;
-  const reportNews = jobResult?.news ?? news;
+  const allReportNews = jobResult?.news ?? news;
+  const reportNews = filterFreshNews(allReportNews);
+  const staleNewsCount = countStaleNews(allReportNews);
   const rows = [
     ["市場全体の雰囲気", currentReport.market],
     ["監視銘柄の状態", currentReport.watchlist],
@@ -58,11 +61,16 @@ export default function ReportsPage() {
       <section className="space-y-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-50">ニュース別の読み解き</h3>
-          <p className="mt-1 text-sm text-slate-400">海外ニュースをAIが日本語で整理した内容です。</p>
+          <p className="mt-1 text-sm text-slate-400">{freshNewsWindowDays}日以内の海外ニュースだけを表示します。古いニュースは{staleNewsCount}件非表示です。</p>
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
           {reportNews.map((item, index) => <NewsCard key={newsKey(item, index)} item={item} />)}
         </div>
+        {!reportNews.length ? (
+          <div className="rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-5 text-sm leading-6 text-yellow-100">
+            {freshNewsWindowDays}日以内のニュースがありません。Manual AI Jobで最新ニュースを取得してください。
+          </div>
+        ) : null}
       </section>
     </div>
   );

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport, watchlist } from "@/lib/mock-data";
 import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
 import { fetchStockData } from "@/lib/stock-data";
-import { saveJobResult } from "@/lib/supabase";
+import { loadSavedNewsForTicker, saveJobResult } from "@/lib/supabase";
 import type { AiJobResult, AiTask, DailyPrice, NewsItem, Sentiment, Stock, StockAnalysisResult } from "@/types";
 
 const jstFormatter = new Intl.DateTimeFormat("ja-JP", {
@@ -157,7 +157,8 @@ async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean): Promise<Sto
 async function fetchNews(stock: Stock): Promise<NewsItem[]> {
   const key = process.env.NEWS_API_KEY;
   const ticker = stock.ticker;
-  if (!key) return mockNews.filter((item) => item.ticker === ticker || ticker === "RGTI");
+  const savedNews = await loadSavedNewsForTicker(ticker);
+  if (!key) return savedNews.length ? savedNews : mockNews.filter((item) => item.ticker === ticker || ticker === "RGTI");
 
   const from = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const query = `("${stock.companyName}" OR ${ticker} OR "${stock.exchange}:${ticker}" OR "${ticker} stock") AND (stock OR shares OR earnings OR partnership OR contract OR offering OR analyst OR revenue OR launch)`;
@@ -171,11 +172,14 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
   });
   const url = `https://newsapi.org/v2/everything?${params.toString()}`;
   const response = await fetch(url, { next: { revalidate: 0 } });
-  if (!response.ok) throw new Error(`News API error: ${response.status}`);
+  if (!response.ok) {
+    if (savedNews.length) return savedNews;
+    throw new Error(`News API error: ${response.status}`);
+  }
 
   const payload = await response.json() as { articles?: Array<{ title?: string; url?: string; source?: { name?: string }; publishedAt?: string; description?: string; content?: string }> };
   const seen = new Set<string>();
-  return (payload.articles ?? []).filter((article) => {
+  const newsItems: NewsItem[] = (payload.articles ?? []).filter((article) => {
     const key = `${article.title ?? ""}-${article.source?.name ?? ""}`;
     if (!article.title || seen.has(key)) return false;
     seen.add(key);
@@ -187,12 +191,13 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
     publishedAt: (article.publishedAt ?? new Date().toISOString()).slice(0, 10),
     ticker,
     summary: article.description ?? article.content ?? "説明文は取得できませんでした。",
-    sentiment: "Neutral",
+    sentiment: "Neutral" as const,
     impactScore: 5,
     risk: "AI分析待ち",
     opportunity: "AI分析待ち",
     aiComment: "OpenAIで日本語分析します。"
   }));
+  return newsItems.length ? newsItems : savedNews;
 }
 
 async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock): Promise<NewsItem[]> {
