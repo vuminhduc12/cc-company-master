@@ -16,7 +16,7 @@ import { aiTasks, news, prices, pricesByTicker, report, watchlist } from "@/lib/
 import { analyzeStock, statusFromScore } from "@/lib/scoring";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
-import type { DailyPrice, WatchlistItem } from "@/types";
+import type { DailyPrice, NewsItem, Stock, WatchStatus, WatchlistItem } from "@/types";
 
 type RealtimeQuote = {
   ok: boolean;
@@ -52,23 +52,47 @@ type RealtimeQuote = {
   fetchedAt: string;
 };
 
+type HistoryApiResult = {
+  ok: true;
+  stock: Stock;
+  prices: DailyPrice[];
+  price: DailyPrice;
+  news: NewsItem[];
+  score: number;
+  status: WatchStatus;
+  mode: "live" | "mock";
+  provider: "yahoo" | "alpha_vantage" | "saved" | "local";
+  sourceLabel: string;
+  warning?: string;
+  fetchedAt: string;
+};
+
 export default function DashboardPage() {
   const [selectedTicker, setSelectedTicker] = useState("RGTI");
   const [realtimeQuote, setRealtimeQuote] = useState<RealtimeQuote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [historyData, setHistoryData] = useState<HistoryApiResult | null>(null);
+  const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [historyError, setHistoryError] = useState("");
   const jobResult = useAiJobResult();
   const executionAudit = resolveAiJobAudit(jobResult);
   const userWatchlist = useUserWatchlist();
   const dashboardWatchlist = userWatchlist.items.length ? userWatchlist.items : watchlist;
   const baseLatest = latestPrice(prices);
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
+  const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
   const selectedLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === selectedItem.stock.ticker);
-  const selectedBasePrices = pricesByTicker[selectedItem.stock.ticker] ?? [latestPriceFromWatchItem(selectedItem)];
-  const resolvedPrices = resolvePriceSeries(selectedBasePrices, selectedLive?.prices, selectedLive?.price ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null));
+  const selectedBasePrices = pricesByTicker[selectedItem.stock.ticker] ?? activeHistoryData?.prices ?? selectedLive?.prices ?? [latestPriceFromWatchItem(selectedItem)];
+  const selectedLivePrice = selectedLive?.price ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null) ?? activeHistoryData?.price ?? null;
+  const resolvedPrices = resolvePriceSeries(selectedBasePrices, selectedLive?.prices ?? activeHistoryData?.prices, selectedLivePrice);
   const chartPrices = resolvedPrices.prices;
   const latest = chartPrices[chartPrices.length - 1] ?? baseLatest;
-  const selectedNews = selectedLive?.news?.length ? selectedLive.news : news.filter((item) => item.ticker === selectedItem.stock.ticker);
+  const selectedNews = selectedLive?.news?.length
+    ? selectedLive.news
+    : activeHistoryData?.news?.length
+      ? activeHistoryData.news
+      : news.filter((item) => item.ticker === selectedItem.stock.ticker);
   const liveNews = selectedNews.length > 0 ? selectedNews : news;
   const scoreAnalysis = analyzeStock(latest, liveNews);
   const score = selectedLive?.aiMarketScore ?? (selectedItem.stock.ticker === "RGTI" && jobResult ? jobResult.aiMarketScore : scoreAnalysis.score);
@@ -84,7 +108,7 @@ export default function DashboardPage() {
   const regularPreviousClose = realtimeQuote?.regular.previousClose ?? chartPrices[chartPrices.length - 2]?.close ?? selectedItem.previousClose;
   const regularChange = realtimeQuote?.regular.change ?? (regularPrice - regularPreviousClose);
   const regularChangePercent = realtimeQuote?.regular.changePercent ?? (regularPreviousClose > 0 ? (regularChange / regularPreviousClose) * 100 : latest.changePercent);
-  const quoteCurrency = realtimeQuote?.regular.currency ?? "USD";
+  const quoteCurrency = realtimeQuote?.regular.currency ?? currencyForTicker(selectedItem.stock.ticker);
   const hasExtendedPrice = Boolean(realtimeQuote?.extended?.price);
   const selectedFinanceUrl = `https://www.google.com/finance/quote/${encodeURIComponent(selectedItem.stock.ticker)}:${encodeURIComponent(selectedItem.stock.exchange)}`;
 
@@ -123,6 +147,39 @@ export default function DashboardPage() {
   }, [selectedTicker]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      setHistoryStatus("loading");
+      setHistoryError("");
+      try {
+        const response = await fetch(`/api/stocks/${encodeURIComponent(selectedTicker)}/history`, { cache: "no-store" });
+        const payload = await response.json() as HistoryApiResult | { ok: false; error?: string };
+        if (cancelled) return;
+        if (!response.ok || !payload.ok) {
+          setHistoryData(null);
+          setHistoryStatus("error");
+          setHistoryError("error" in payload ? payload.error ?? "日足履歴を取得できませんでした。" : "日足履歴を取得できませんでした。");
+          return;
+        }
+        setHistoryData(payload);
+        setHistoryStatus("done");
+      } catch (error) {
+        if (!cancelled) {
+          setHistoryData(null);
+          setHistoryStatus("error");
+          setHistoryError(error instanceof Error ? error.message : "日足履歴を取得できませんでした。");
+        }
+      }
+    }
+
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTicker]);
+
+  useEffect(() => {
     if (dashboardWatchlist.some((item) => item.stock.ticker === selectedTicker)) return;
     const fallbackTicker = dashboardWatchlist[0]?.stock.ticker;
     if (fallbackTicker) setSelectedTicker(fallbackTicker);
@@ -147,6 +204,7 @@ export default function DashboardPage() {
                   ticker={item.stock.ticker}
                   price={currentPrice}
                   change={change}
+                  currency={currencyForTicker(item.stock.ticker)}
                   active={item.stock.ticker === selectedItem.stock.ticker}
                   onClick={() => setSelectedTicker(item.stock.ticker)}
                 />
@@ -169,15 +227,9 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                {pricesByTicker[selectedItem.stock.ticker] ? (
-                  <Link className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100" href={`/stocks/${selectedItem.stock.ticker}`}>
-                    詳細
-                  </Link>
-                ) : (
-                  <Link className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100" href="/watchlist">
-                    Watchlist
-                  </Link>
-                )}
+                <Link className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100" href={`/stocks/${selectedItem.stock.ticker}`}>
+                  詳細
+                </Link>
                 <a className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50" href={selectedFinanceUrl} target="_blank" rel="noreferrer">
                   Google Finance
                 </a>
@@ -251,7 +303,7 @@ export default function DashboardPage() {
                 {selectedItem.stock.companyName}は{selectedItem.stock.sector}関連銘柄です。通常取引価格、時間外価格、日足テクニカル、ニュース材料を同じ画面で確認できます。
               </p>
               <p className="mt-3 text-xs leading-5 text-slate-500">
-                データソース: {realtimeQuote?.source ?? "ローカル履歴"} / 最終取得: {formatDateTime(realtimeQuote?.fetchedAt)}
+                データソース: {activeHistoryData?.sourceLabel ?? realtimeQuote?.source ?? "ローカル履歴"} / 最終取得: {formatDateTime(activeHistoryData?.fetchedAt ?? realtimeQuote?.fetchedAt)}
               </p>
             </div>
           </aside>
@@ -269,7 +321,7 @@ export default function DashboardPage() {
       <section className="grid gap-4 md:grid-cols-4">
         <StatCard label="Last AI Run" value={jobResult?.lastRun ?? "未実行"} tone="gold" />
         <StatCard label="Next Scheduled Run" value={jobResult?.nextRun ?? "07:00 JST"} tone="blue" />
-        <StatCard label="Data Freshness" value={selectedLive?.dataFreshness ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.dataFreshness : null) ?? latest.date} />
+        <StatCard label="Data Freshness" value={selectedLive?.dataFreshness ?? activeHistoryData?.fetchedAt ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.dataFreshness : null) ?? latest.date} />
         <StatCard label="AI Job Status" value={jobResult?.status ?? "Pending"} tone={jobResult?.status === "Error" ? "red" : jobResult?.status === "Completed" ? "green" : "yellow"} />
       </section>
 
@@ -291,6 +343,16 @@ export default function DashboardPage() {
       {resolvedPrices.rejectedLive ? (
         <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
           Data Warning: APIから取得した{selectedItem.stock.ticker}価格がローカル検証済み履歴と大きく異なるため、画面ではローカル履歴を優先表示しています。
+        </section>
+      ) : null}
+      {activeHistoryData?.warning ? (
+        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
+          History Warning: {activeHistoryData.warning}
+        </section>
+      ) : null}
+      {historyStatus === "error" && !pricesByTicker[selectedItem.stock.ticker] && !selectedLive?.prices?.length ? (
+        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
+          History Notice: {selectedItem.stock.ticker}の日足履歴を取得できなかったため、Watchlist保存価格で暫定表示しています。{historyError}
         </section>
       ) : null}
 
@@ -335,20 +397,15 @@ export default function DashboardPage() {
               const currentPrice = rowLatest?.close ?? live?.price.close ?? item.currentPrice;
               const previousClose = rowResolved?.prices[rowResolved.prices.length - 2]?.close ?? (live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose);
               const change = previousClose > 0 ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
-              const hasDetail = Boolean(pricesByTicker[item.stock.ticker]);
               return [
-                hasDetail ? (
-                  <button
-                    key="ticker"
-                    className={item.stock.ticker === selectedItem.stock.ticker ? "font-bold text-yellow-200" : "font-bold text-sky-300 hover:text-sky-200"}
-                    onClick={() => setSelectedTicker(item.stock.ticker)}
-                  >
-                    {item.stock.ticker}
-                  </button>
-                ) : (
-                  <span key="ticker" className="font-bold text-slate-300">{item.stock.ticker}</span>
-                ),
-                currentPrice ? `$${currentPrice.toFixed(2)}` : "-",
+                <button
+                  key="ticker"
+                  className={item.stock.ticker === selectedItem.stock.ticker ? "font-bold text-yellow-200" : "font-bold text-sky-300 hover:text-sky-200"}
+                  onClick={() => setSelectedTicker(item.stock.ticker)}
+                >
+                  {item.stock.ticker}
+                </button>,
+                currentPrice ? formatMoney(currentPrice, currencyForTicker(item.stock.ticker)) : "-",
                 <span key="change" className={change >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>{change ? `${change.toFixed(2)}%` : "-"}</span>,
                 <StatusBadge key="status" value={live?.status ?? item.status} />
               ];
@@ -377,26 +434,20 @@ export default function DashboardPage() {
               <Metric label="MACD方向" value={latest.macdDirection} tone="green" />
               <Metric label="MA20 / MA50" value={`$${latest.ma20.toFixed(2)} / $${latest.ma50.toFixed(2)}`} />
             </div>
-            {pricesByTicker[selectedItem.stock.ticker] ? (
-              <Link className="mt-4 inline-flex rounded-full border border-sky-300/30 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-300/10" href={`/stocks/${selectedItem.stock.ticker}`}>
-                詳細ページを開く
-              </Link>
-            ) : (
-              <p className="mt-4 rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-xs font-semibold text-slate-400">
-                追加銘柄はWatchlistでリアル価格を管理中です。
-              </p>
-            )}
+            <Link className="mt-4 inline-flex rounded-full border border-sky-300/30 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-300/10" href={`/stocks/${selectedItem.stock.ticker}`}>
+              詳細ページを開く
+            </Link>
           </div>
 
-          <div className={latest.rsi >= 70 || selectedLive?.warning ? "rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-5" : "rounded-2xl border border-sky-300/20 bg-sky-300/10 p-5"}>
+          <div className={latest.rsi >= 70 || selectedLive?.warning || activeHistoryData?.warning ? "rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-5" : "rounded-2xl border border-sky-300/20 bg-sky-300/10 p-5"}>
             <div className="flex items-center justify-between">
-              <h3 className={latest.rsi >= 70 || selectedLive?.warning ? "font-semibold text-yellow-100" : "font-semibold text-sky-100"}>
-                {selectedLive?.warning ? "Data Warning" : latest.rsi >= 70 ? "Warning" : "AI Note"}
+              <h3 className={latest.rsi >= 70 || selectedLive?.warning || activeHistoryData?.warning ? "font-semibold text-yellow-100" : "font-semibold text-sky-100"}>
+                {selectedLive?.warning || activeHistoryData?.warning ? "Data Warning" : latest.rsi >= 70 ? "Warning" : "AI Note"}
               </h3>
-              <StatusBadge value={latest.rsi >= 70 || selectedLive?.warning ? "Caution" : status} />
+              <StatusBadge value={latest.rsi >= 70 || selectedLive?.warning || activeHistoryData?.warning ? "Caution" : status} />
             </div>
-            <p className={latest.rsi >= 70 || selectedLive?.warning ? "mt-3 text-sm leading-6 text-yellow-100/85" : "mt-3 text-sm leading-6 text-sky-100/85"}>
-              {selectedLive?.warning ?? `${selectedItem.stock.ticker}はRSI ${latest.rsi.toFixed(2)}、出来高倍率 ${volumeRatio(latest).toFixed(2)}x です。MA20維持とニュース材料を確認してください。`}
+            <p className={latest.rsi >= 70 || selectedLive?.warning || activeHistoryData?.warning ? "mt-3 text-sm leading-6 text-yellow-100/85" : "mt-3 text-sm leading-6 text-sky-100/85"}>
+              {selectedLive?.warning ?? activeHistoryData?.warning ?? `${selectedItem.stock.ticker}はRSI ${latest.rsi.toFixed(2)}、出来高倍率 ${volumeRatio(latest).toFixed(2)}x です。MA20維持とニュース材料を確認してください。`}
             </p>
           </div>
 
@@ -490,12 +541,14 @@ function MarketChip({
   ticker,
   price,
   change,
+  currency,
   active,
   onClick
 }: {
   ticker: string;
   price: number;
   change: number;
+  currency: string;
   active: boolean;
   onClick: () => void;
 }) {
@@ -511,10 +564,14 @@ function MarketChip({
       </span>
       <span className="min-w-0">
         <span className="block text-sm font-bold text-slate-950">{ticker}</span>
-        <span className="block truncate text-xs text-slate-500">{formatMoney(price, "USD")} / <span className={change >= 0 ? "text-green-700" : "text-red-700"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></span>
+        <span className="block truncate text-xs text-slate-500">{formatMoney(price, currency)} / <span className={change >= 0 ? "text-green-700" : "text-red-700"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></span>
       </span>
     </button>
   );
+}
+
+function currencyForTicker(ticker: string) {
+  return /^\d{4}(\.T|\.JP)?$/i.test(ticker) ? "JPY" : "USD";
 }
 
 function FactRow({ label, value }: { label: string; value: string }) {
