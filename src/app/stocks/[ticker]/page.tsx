@@ -1,12 +1,13 @@
 "use client";
 
-import { use } from "react";
+import { use, useMemo } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DataTable } from "@/components/DataTable";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
 import { StockChart } from "@/components/StockChart";
+import { analyzePatternSimilarity } from "@/lib/pattern-similarity";
 import { resolvePriceSeries } from "@/lib/indicators";
 import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
@@ -33,6 +34,13 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const scoreAnalysis = analyzeStock(latest, tickerNews);
   const sourceLabel = live ? resolvedPrices.source : item.stock.ticker === "RGTI" ? "Excel history" : "Local SIDU historical data";
   const detailItems = watchlist.filter((row) => Boolean(getPricesForTicker(row.stock.ticker)));
+  const decisionLevels = useMemo(() => buildDecisionLevels(mergedPrices), [mergedPrices]);
+  const patternSimilarity = useMemo(() => analyzePatternSimilarity(mergedPrices), [mergedPrices]);
+  const newsCounts = {
+    positive: tickerNews.filter((newsItem) => newsItem.sentiment === "Positive").length,
+    neutral: tickerNews.filter((newsItem) => newsItem.sentiment === "Neutral").length,
+    negative: tickerNews.filter((newsItem) => newsItem.sentiment === "Negative").length
+  };
 
   return (
     <div className="min-w-0 space-y-5">
@@ -97,24 +105,61 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         <InsightCard label="日次データ件数" value={`${mergedPrices.length}件`} tone="blue" />
       </section>
 
-      <StockDecisionPanel
-        stock={item.stock}
-        prices={mergedPrices}
-        news={tickerNews}
-        analysis={scoreAnalysis}
-        sourceLabel={sourceLabel}
-      />
+      <DecisionSectionNav />
 
-      <div className="min-w-0">
+      <section id="conclusion" className="scroll-mt-24 rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.06] p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+        <SectionHeading title="結論" note="最初に見るべき投資判断の要約" />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <DecisionTile label="現在の姿勢" value={buildPostureLabel(latest, scoreAnalysis.score, decisionLevels.support, newsCounts.negative)} tone={scoreAnalysis.score >= 6 ? "up" : newsCounts.negative ? "warn" : "default"} />
+          <DecisionTile label="短期レンジ" value={`$${decisionLevels.support.toFixed(2)} - $${decisionLevels.resistance.toFixed(2)}`} />
+          <DecisionTile label="上昇確認" value={`$${decisionLevels.breakout.toFixed(2)} 突破`} tone="up" />
+          <DecisionTile label="危険ライン" value={`$${decisionLevels.danger.toFixed(2)} 割れ`} tone="down" />
+        </div>
+        <p className="mt-4 text-sm leading-7 text-slate-200">
+          {item.stock.ticker}は、まず{`$${decisionLevels.support.toFixed(2)}`}〜{`$${decisionLevels.resistance.toFixed(2)}`}の価格帯を基準に見ます。
+          上方向は{`$${decisionLevels.breakout.toFixed(2)}`}を出来高を伴って維持できるか、下方向は{`$${decisionLevels.danger.toFixed(2)}`}を明確に割らないかが重要です。
+          ニュースはPositive {newsCounts.positive}件、Neutral {newsCounts.neutral}件、Negative {newsCounts.negative}件です。
+        </p>
+      </section>
+
+      <section id="upside" className="scroll-mt-24">
+        <SectionHeading title="上昇条件" note="上に行くために確認したい価格・出来高・トレンド条件" />
+        <StockDecisionPanel
+          stock={item.stock}
+          prices={mergedPrices}
+          news={tickerNews}
+          analysis={scoreAnalysis}
+          sourceLabel={sourceLabel}
+        />
+      </section>
+
+      <section id="danger" className="scroll-mt-24 rounded-2xl border border-red-300/20 bg-red-300/[0.06] p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+        <SectionHeading title="危険ライン" note="前提が崩れる水準と、深い調整に変わる条件" />
+        <div className="grid gap-3 md:grid-cols-3">
+          <DecisionTile label="危険ライン" value={`$${decisionLevels.danger.toFixed(2)}`} tone="down" />
+          <DecisionTile label="MA20" value={`$${latest.ma20.toFixed(2)}`} />
+          <DecisionTile label="MA50" value={`$${latest.ma50.toFixed(2)}`} />
+        </div>
+        <p className="mt-4 text-sm leading-7 text-slate-200">
+          {`$${decisionLevels.danger.toFixed(2)}`}を出来高増で割る場合、短期レンジの下抜けだけでなく、損切り・資金管理を優先する局面になります。
+          特にRSIが弱まり、MA20とMA50を同時に下回る場合は、反発狙いよりも下値確認を優先します。
+        </p>
+      </section>
+
+      <section className="min-w-0 scroll-mt-24" id="chart">
+        <SectionHeading title="チャート" note="価格推移とテクニカルの全体像" />
         <StockChart prices={chartPrices} ticker={item.stock.ticker} />
-      </div>
+      </section>
 
-      <SpotEntrySimulator stock={item.stock} price={latest} news={tickerNews} score={scoreAnalysis.score} />
+      <section id="simulation" className="scroll-mt-24">
+        <SectionHeading title="現物シミュレーション" note="現在付近で入った場合の利確・損切り・税金・為替影響" />
+        <SpotEntrySimulator stock={item.stock} price={latest} news={tickerNews} score={scoreAnalysis.score} />
+      </section>
 
-      <section className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+      <section id="news-materials" className="scroll-mt-24 rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+        <SectionHeading title="ニュース材料" note="AIスコアに影響している強材料と注意材料" />
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
-            <h3 className="text-lg font-bold text-slate-50">AI判定根拠</h3>
             <p className="mt-2 text-sm leading-6 text-slate-300">{scoreAnalysis.summary}</p>
           </div>
           <div className="rounded-2xl border border-sky-300/25 bg-sky-300/10 px-4 py-3">
@@ -126,6 +171,23 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           <ReasonList title="強材料" items={scoreAnalysis.positivePoints.slice(0, 4)} />
           <ReasonList title="注意材料" items={scoreAnalysis.negativePoints.slice(0, 4)} />
         </div>
+      </section>
+
+      <section id="similar-patterns" className="scroll-mt-24 rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.06] p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+        <SectionHeading title="過去類似" note="今の形に近い過去パターンと、その後の値動き" />
+        <div className="grid gap-3 md:grid-cols-3">
+          {patternSimilarity.horizons.map((horizon) => (
+            <DecisionTile
+              key={horizon.days}
+              label={`${horizon.days}営業日後`}
+              value={`${horizon.averageReturn >= 0 ? "+" : ""}${horizon.averageReturn.toFixed(2)}%`}
+              sub={`上昇確率 ${horizon.winRate.toFixed(0)}% / ${horizon.sampleCount}件`}
+              tone={horizon.averageReturn > 0 ? "up" : horizon.averageReturn < 0 ? "down" : "default"}
+            />
+          ))}
+        </div>
+        <p className="mt-4 text-sm leading-7 text-slate-200">{patternSimilarity.summary}</p>
+        <p className="mt-2 text-xs leading-5 text-slate-500">{patternSimilarity.caveat}</p>
       </section>
 
       <section className="md:hidden">
@@ -163,6 +225,79 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       </div>
     </div>
   );
+}
+
+function DecisionSectionNav() {
+  const links = [
+    ["#conclusion", "結論"],
+    ["#upside", "上昇条件"],
+    ["#danger", "危険ライン"],
+    ["#news-materials", "ニュース材料"],
+    ["#similar-patterns", "過去類似"],
+    ["#simulation", "現物シミュレーション"]
+  ] as const;
+
+  return (
+    <nav className="sticky top-16 z-20 -mx-1 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/90 p-2 shadow-xl shadow-black/25 backdrop-blur [-webkit-overflow-scrolling:touch]">
+      <div className="flex min-w-max gap-2">
+        {links.map(([href, label]) => (
+          <a key={href} href={href} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-slate-300 transition hover:border-sky-300/35 hover:bg-sky-300/10 hover:text-sky-100 sm:px-4 sm:text-sm">
+            {label}
+          </a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function SectionHeading({ title, note }: { title: string; note: string }) {
+  return (
+    <div className="mb-4">
+      <h3 className="text-lg font-black text-slate-50">{title}</h3>
+      <p className="mt-1 text-xs leading-5 text-slate-500">{note}</p>
+    </div>
+  );
+}
+
+function DecisionTile({ label, value, sub, tone = "default" }: { label: string; value: string; sub?: string; tone?: "default" | "up" | "down" | "warn" }) {
+  const color = {
+    default: "text-slate-50",
+    up: "text-sky-300",
+    down: "text-red-300",
+    warn: "text-yellow-300"
+  }[tone];
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className={`mt-2 break-words text-xl font-black ${color}`}>{value}</p>
+      {sub ? <p className="mt-1 text-xs leading-5 text-slate-500">{sub}</p> : null}
+    </div>
+  );
+}
+
+function buildDecisionLevels(prices: DailyPrice[]) {
+  const latest = prices[prices.length - 1];
+  const recent20 = prices.slice(-20);
+  const recent60 = prices.slice(-60);
+  const low20 = Math.min(...recent20.map((price) => price.low));
+  const high20 = Math.max(...recent20.map((price) => price.high));
+  const high60 = Math.max(...recent60.map((price) => price.high));
+  const support = Math.min(low20, latest.ma20 || low20);
+  return {
+    support,
+    resistance: high20,
+    breakout: Math.max(high20, latest.ma20 || high20),
+    danger: Math.min(support, latest.ma50 || support),
+    high60
+  };
+}
+
+function buildPostureLabel(latest: DailyPrice, score: number, support: number, negativeNews: number) {
+  if (latest.close < support || negativeNews >= 2) return "警戒";
+  if (score >= 6 && latest.close >= latest.ma20) return "継続監視";
+  if (latest.rsi >= 70) return "過熱注意";
+  return "様子見";
 }
 
 function ReasonList({ title, items }: { title: string; items: { label: string; points: number; detail: string }[] }) {

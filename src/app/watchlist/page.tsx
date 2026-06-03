@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
+import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { resolvePriceSeries } from "@/lib/indicators";
 import { pricesByTicker, watchlist } from "@/lib/mock-data";
 import { statusFromScore } from "@/lib/scoring";
@@ -193,6 +194,9 @@ export default function WatchlistPage() {
             <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">Watchlist</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
               米国株・国内株を検索して、リアル株価を取得した銘柄をWatchlistに追加できます。削除した銘柄と追加銘柄はブラウザに保存されます。
+            </p>
+            <p className="mt-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2 text-xs leading-5 text-emerald-100">
+              データ取得優先順位: <span className="font-black">{stockDataProviderPriorityLabel}</span>
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <WatchStat label="表示銘柄" value={`${visibleItems.length}`} />

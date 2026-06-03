@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
+import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import {
   buildPositionComparisons,
   buildScenarios,
@@ -220,7 +221,7 @@ export default function MarginSimulatorPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-300">Realtime AI Search</p>
           <h3 className="mt-2 text-xl font-black text-slate-50">銘柄検索とAIエントリー判定</h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            国内株と米国株を切り替えて検索できます。株価はYahoo Financeを優先し、必要に応じてAlpha Vantageやローカル履歴に切り替えます。
+            国内株と米国株を切り替えて検索できます。株価データは {stockDataProviderPriorityLabel} の順で取得します。
           </p>
           <div className="mt-4 grid gap-3">
             <div>

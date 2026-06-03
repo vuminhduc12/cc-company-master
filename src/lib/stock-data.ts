@@ -1,3 +1,4 @@
+import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { getPricesForTicker } from "@/lib/mock-data";
 import { loadSavedPricesForTicker } from "@/lib/supabase";
 import type { DailyPrice } from "@/types";
@@ -28,34 +29,14 @@ export type StockDataResult = {
 };
 
 export async function fetchStockData(ticker: string): Promise<StockDataResult> {
-  const provider = normalizeProvider(process.env.STOCK_DATA_PROVIDER);
   const fallback = getPricesForTicker(ticker);
   const warnings: string[] = [];
   const errors: string[] = [];
 
-  if (provider === "yahoo") {
-    const yahooAttempt = await tryFetchYahooFinanceStockData(ticker);
-    if (yahooAttempt.result) return yahooAttempt.result;
-    if (yahooAttempt.error) errors.push(`Yahoo Finance: ${yahooAttempt.error}`);
-    warnings.push(`${ticker}: Yahoo Financeから日足データを取得できませんでした。`);
-
-    const alphaAttempt = await tryFetchAlphaVantageStockData(ticker);
-    if (alphaAttempt.result) {
-      return withWarning(alphaAttempt.result, warnings.join(" "));
-    }
-    if (alphaAttempt.error) errors.push(`Alpha Vantage: ${alphaAttempt.error}`);
-  } else {
-    const alphaAttempt = await tryFetchAlphaVantageStockData(ticker);
-    if (alphaAttempt.result) return alphaAttempt.result;
-    if (alphaAttempt.error) errors.push(`Alpha Vantage: ${alphaAttempt.error}`);
-    warnings.push(`${ticker}: Alpha Vantageから日足データを取得できませんでした。`);
-
-    const yahooAttempt = await tryFetchYahooFinanceStockData(ticker);
-    if (yahooAttempt.result) {
-      return withWarning(yahooAttempt.result, warnings.join(" "));
-    }
-    if (yahooAttempt.error) errors.push(`Yahoo Finance: ${yahooAttempt.error}`);
-  }
+  const yahooAttempt = await tryFetchYahooFinanceStockData(ticker);
+  if (yahooAttempt.result) return yahooAttempt.result;
+  if (yahooAttempt.error) errors.push(`Yahoo Finance: ${yahooAttempt.error}`);
+  warnings.push(`${ticker}: Yahoo Financeから日足データを取得できませんでした。`);
 
   const savedPrices = await loadSavedPricesForTicker(ticker);
   if (savedPrices.length) {
@@ -76,15 +57,23 @@ export async function fetchStockData(ticker: string): Promise<StockDataResult> {
     };
   }
 
+  if (isAlphaVantageFallbackEnabled()) {
+    const alphaAttempt = await tryFetchAlphaVantageStockData(ticker);
+    if (alphaAttempt.result) {
+      return withWarning(alphaAttempt.result, [...warnings, `${ticker}: 保存済み履歴とローカル履歴がないため、Alpha Vantageを最後の補助として使用しました。`].join(" "));
+    }
+    if (alphaAttempt.error) errors.push(`Alpha Vantage: ${alphaAttempt.error}`);
+  }
+
   const details = errors.length > 0 ? ` 詳細: ${errors.join(" / ")}` : "";
   const marketHint = /^\d{4}\.T$/i.test(ticker)
     ? " 国内株は東証上場の4桁コードを想定しています。銘柄コードが東証に存在するか確認してください。"
     : "";
-  throw new Error(`${ticker}: 株価データを取得できませんでした。Yahoo Finance、Alpha Vantage、ローカル履歴のいずれにも有効な日足がありません。${marketHint}${details}`);
+  throw new Error(`${ticker}: 株価データを取得できませんでした。優先順位は ${stockDataProviderPriorityLabel} です。いずれにも有効な日足がありません。${marketHint}${details}`);
 }
 
-function normalizeProvider(value: string | undefined): StockDataProvider {
-  return value === "alpha_vantage" ? "alpha_vantage" : "yahoo";
+function isAlphaVantageFallbackEnabled() {
+  return process.env.ENABLE_ALPHA_VANTAGE_FALLBACK === "true";
 }
 
 async function tryFetchYahooFinanceStockData(ticker: string): Promise<FetchAttempt> {

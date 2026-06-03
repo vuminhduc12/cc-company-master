@@ -114,6 +114,33 @@ export type StockAnalysisResult = {
   warning?: string;
 };
 
+export type AiStockExecutionAudit = {
+  ticker: string;
+  status: TaskStatus;
+  priceSource: string;
+  priceFreshness: string;
+  newsCount: number;
+  latestNewsDate?: string;
+  aiNewsCount: number;
+  ruleNewsCount: number;
+  fallbackReason?: string;
+  warning?: string;
+  error?: string;
+};
+
+export type AiJobExecutionAudit = {
+  lastRun: string;
+  generatedAt: string;
+  totalStocks: number;
+  completedStocks: number;
+  failedStocks: number;
+  aiNewsCount: number;
+  ruleNewsCount: number;
+  latestNewsDate?: string;
+  dataFreshness: string;
+  stocks: AiStockExecutionAudit[];
+};
+
 export type AiJobResult = {
   ok: boolean;
   mode: "live" | "mock";
@@ -125,6 +152,7 @@ export type AiJobResult = {
   price: DailyPrice;
   news: NewsItem[];
   stocks?: StockAnalysisResult[];
+  executionAudit?: AiJobExecutionAudit;
   tasks: AiTask[];
   report: DailyReport;
   error?: string;

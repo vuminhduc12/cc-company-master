@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import {
+  clearAiDiagnosisHistoryForTicker,
+  deleteAiDiagnosisHistoryItem,
+  loadAiDiagnosisHistory,
+  saveAiDiagnosisHistory,
+  type AiDiagnosisHistoryItem
+} from "@/lib/ai-diagnosis-history";
+import {
   accountTypeLabel,
   calculateSpotSimulation,
   JAPAN_CAPITAL_GAINS_TAX_RATE,
@@ -61,9 +68,10 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [aiMode, setAiMode] = useState<"normal" | "detailed">("normal");
   const [aiRequestHasQuestion, setAiRequestHasQuestion] = useState(false);
-  const [aiRuntime, setAiRuntime] = useState<{ mode: "ai" | "rule"; model?: string; warning?: string } | null>(null);
+  const [aiRuntime, setAiRuntime] = useState<{ mode: "ai" | "rule"; model?: string; warning?: string; cached?: boolean } | null>(null);
   const [aiError, setAiError] = useState("");
   const [aiQuestion, setAiQuestion] = useState("");
+  const [aiHistory, setAiHistory] = useState<AiDiagnosisHistoryItem[]>([]);
 
   const input: SpotSimulationInput = useMemo(() => ({
     currency,
@@ -108,6 +116,10 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
     };
   }, [currency]);
 
+  useEffect(() => {
+    setAiHistory(loadAiDiagnosisHistory(stock.ticker));
+  }, [stock.ticker]);
+
   async function requestAiComment(diagnosisMode: "normal" | "detailed", question = "") {
     setAiStatus("loading");
     setAiMode(diagnosisMode);
@@ -147,12 +159,30 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
 
       if (!response.ok) throw new Error(`${diagnosisMode === "detailed" ? "AI詳細診断" : "AI診断"}に失敗しました (${response.status})`);
       const data = await response.json();
-      setAiComment(data.analysis);
-      setAiRuntime({
+      const runtime = {
         mode: data.mode === "ai" ? "ai" : "rule",
         model: typeof data.model === "string" ? data.model : undefined,
-        warning: typeof data.warning === "string" ? data.warning : undefined
-      });
+        warning: typeof data.warning === "string" ? data.warning : undefined,
+        cached: Boolean(data.cached)
+      } as const;
+      setAiComment(data.analysis);
+      setAiRuntime(runtime);
+      setAiHistory(saveAiDiagnosisHistory({
+        id: createHistoryId(stock.ticker),
+        ticker: stock.ticker,
+        companyName: stock.companyName,
+        createdAt: new Date().toISOString(),
+        diagnosisMode,
+        question: trimmedQuestion || undefined,
+        runtime,
+        comment: data.analysis,
+        input,
+        quote: {
+          price: price.close,
+          date: price.date,
+          changePercent: price.changePercent
+        }
+      }));
       setAiStatus("done");
     } catch (error) {
       setAiStatus("error");
@@ -309,10 +339,89 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
             <p className="mt-3 text-[11px] leading-5 text-slate-500">詳細診断と質問回答は高精度モデルを使うため、通常診断よりAPIコストが高くなります。</p>
             {aiStatus === "error" ? <p className="mt-3 text-sm text-red-200">{aiError}</p> : null}
             {aiComment ? <AiCommentPanel comment={aiComment} mode={aiMode} runtime={aiRuntime} /> : null}
+            <AiDiagnosisHistoryPanel
+              ticker={stock.ticker}
+              items={aiHistory}
+              onSelect={(item) => {
+                setAiComment(item.comment as AiRiskComment);
+                setAiMode(item.diagnosisMode);
+                setAiRuntime(item.runtime);
+                setAiRequestHasQuestion(Boolean(item.question));
+                setAiQuestion(item.question ?? "");
+              }}
+              onDelete={(id) => setAiHistory(deleteAiDiagnosisHistoryItem(id, stock.ticker))}
+              onClear={() => setAiHistory(clearAiDiagnosisHistoryForTicker(stock.ticker))}
+            />
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function AiDiagnosisHistoryPanel({
+  ticker,
+  items,
+  onSelect,
+  onDelete,
+  onClear
+}: {
+  ticker: string;
+  items: AiDiagnosisHistoryItem[];
+  onSelect: (item: AiDiagnosisHistoryItem) => void;
+  onDelete: (id: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <p className="text-sm font-bold text-slate-100">AI診断履歴</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{ticker}の質問・診断・使用モデル・データ鮮度を保存します。最大30件まで保持します。</p>
+        </div>
+        {items.length ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="w-fit rounded-xl border border-red-300/25 bg-red-300/10 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-300/20"
+          >
+            履歴を全削除
+          </button>
+        ) : null}
+      </div>
+      {items.length ? (
+        <div className="mt-4 space-y-2">
+          {items.map((item) => (
+            <div key={item.id} className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <button type="button" onClick={() => onSelect(item)} className="min-w-0 text-left">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-black text-slate-300">{item.diagnosisMode === "detailed" ? "詳細" : "通常"}</span>
+                    <span className={item.runtime.mode === "ai" ? "rounded-full border border-sky-300/35 bg-sky-300/10 px-2 py-0.5 text-[10px] font-black text-sky-100" : "rounded-full border border-yellow-300/35 bg-yellow-300/10 px-2 py-0.5 text-[10px] font-black text-yellow-100"}>
+                      {item.runtime.mode === "ai" ? `AI${item.runtime.model ? ` / ${item.runtime.model}` : ""}` : "Rule"}
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-500">{formatDateTime(item.createdAt)}</span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-sm font-bold leading-5 text-slate-200">{item.question || item.comment.summary}</p>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500">価格 {formatMoney(item.quote.price, item.input.currency)} / {item.quote.date} / 鮮度: {item.comment.dataFreshness ?? "未記録"}</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(item.id)}
+                  className="w-fit rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-bold text-slate-400 transition hover:border-red-300/30 hover:bg-red-300/10 hover:text-red-100"
+                >
+                  削除
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-xl border border-white/10 bg-slate-900/60 p-3 text-xs leading-5 text-slate-500">
+          まだ履歴はありません。通常診断、詳細診断、または質問分析を実行すると自動保存されます。
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -369,7 +478,7 @@ function ScenarioStatus({ scenario }: { scenario: SpotScenario }) {
   return <span className={`inline-flex min-w-20 justify-center rounded-full border px-2.5 py-1 text-xs font-bold ${className}`}>{scenario.status}</span>;
 }
 
-function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mode: "normal" | "detailed"; runtime: { mode: "ai" | "rule"; model?: string; warning?: string } | null }) {
+function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mode: "normal" | "detailed"; runtime: { mode: "ai" | "rule"; model?: string; warning?: string; cached?: boolean } | null }) {
   const riskClass = comment.riskLevel === "高"
     ? "border-red-400/40 bg-red-400/15 text-red-100"
     : comment.riskLevel === "中"
@@ -389,6 +498,11 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
                   : "border-yellow-300/35 bg-yellow-300/10 text-yellow-100"
               }`}>
                 {runtime.mode === "ai" ? `AI分析${runtime.model ? ` / ${runtime.model}` : ""}` : "ルール分析"}
+              </span>
+            ) : null}
+            {runtime?.cached ? (
+              <span className="rounded-full border border-emerald-300/35 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">
+                Cache再利用
               </span>
             ) : null}
           </div>
@@ -506,6 +620,11 @@ function parseNumericInput(value: string, fallback: number) {
   if (value === "" || value === "-" || value === "." || value === "-.") return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function createHistoryId(ticker: string) {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `${ticker}-${crypto.randomUUID()}`;
+  return `${ticker}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function formatDateTime(value: string) {

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { resolveAiJobAudit } from "@/lib/ai-job-audit";
+import { stockDataProviderPolicyNote, stockDataProviderPriority, stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { aiTasks, news, prices, report } from "@/lib/mock-data";
 import { scoreStock } from "@/lib/scoring";
 import { useUserWatchlist } from "@/lib/user-watchlist";
@@ -13,6 +15,18 @@ export default function SettingsPage() {
   const [cronSecret, setCronSecret] = useState("");
   const [status, setStatus] = useState<"idle" | "running" | "completed" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [latestJobResult, setLatestJobResult] = useState<AiJobResult | null>(null);
+  const executionAudit = resolveAiJobAudit(latestJobResult);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return;
+    try {
+      setLatestJobResult(JSON.parse(stored) as AiJobResult);
+    } catch {
+      setLatestJobResult(null);
+    }
+  }, []);
 
   async function runAiJob() {
     setStatus("running");
@@ -34,6 +48,7 @@ export default function SettingsPage() {
       report
     };
     localStorage.setItem(storageKey, JSON.stringify(runningResult));
+    setLatestJobResult(runningResult);
     try {
       const response = await fetch("/api/cron/daily-job", {
         method: "POST",
@@ -49,14 +64,17 @@ export default function SettingsPage() {
       setStatus(result.ok ? "completed" : "error");
       if (result.ok) {
         localStorage.setItem(storageKey, JSON.stringify(result));
+        setLatestJobResult(result);
         setMessage(`完了しました。Last Run: ${result.lastRun}${result.warning ? ` / Warning: ${result.warning}` : ""}`);
       } else {
         restoreStoredJobResult(previousStoredResult);
+        setLatestJobResult(readStoredJobResult());
         setMessage(formatAiJobError(result.error ?? "Unknown error"));
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       restoreStoredJobResult(previousStoredResult);
+      setLatestJobResult(readStoredJobResult());
       setStatus("error");
       setMessage(formatAiJobError(errorMessage));
     }
@@ -94,6 +112,26 @@ export default function SettingsPage() {
         </label>
       </div>
 
+      <section className="rounded-2xl border border-emerald-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">Data Provider Policy</p>
+            <h3 className="mt-2 text-lg font-semibold text-slate-50">株価データ取得の優先順位</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-400">{stockDataProviderPolicyNote}</p>
+          </div>
+          <span className="w-fit rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs font-black text-emerald-100">
+            {stockDataProviderPriorityLabel}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {stockDataProviderPriority.map((provider) => (
+            <div key={provider} className="rounded-xl border border-white/10 bg-slate-950/45 px-3 py-3 text-xs font-bold text-slate-300">
+              {provider}
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-sky-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <h3 className="text-lg font-semibold text-slate-50">Manual AI Job</h3>
         <p className="mt-2 text-sm text-slate-400">
@@ -120,7 +158,54 @@ export default function SettingsPage() {
             {message}
           </p>
         ) : null}
+        {executionAudit ? (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AuditMetric label="完了銘柄" value={`${executionAudit.completedStocks}/${executionAudit.totalStocks}`} tone={executionAudit.failedStocks ? "yellow" : "green"} />
+              <AuditMetric label="AI分析ニュース" value={executionAudit.aiNewsCount} tone="blue" />
+              <AuditMetric label="ルール代替ニュース" value={executionAudit.ruleNewsCount} tone={executionAudit.ruleNewsCount ? "yellow" : "green"} />
+              <AuditMetric label="最新ニュース日" value={executionAudit.latestNewsDate ?? "-"} />
+            </div>
+            <div className="mt-4 space-y-2">
+              {executionAudit.stocks.map((item) => (
+                <div key={item.ticker} className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-black text-slate-100">{item.ticker}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">株価: {item.priceSource} / 鮮度: {item.priceFreshness}</p>
+                    </div>
+                    <span className={item.status === "Error" ? "w-fit rounded-full border border-red-300/35 bg-red-300/10 px-2.5 py-1 text-xs font-black text-red-100" : "w-fit rounded-full border border-emerald-300/35 bg-emerald-300/10 px-2.5 py-1 text-xs font-black text-emerald-100"}>
+                      {item.status}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-300">News {item.newsCount}件 / AI {item.aiNewsCount}件 / Rule {item.ruleNewsCount}件{item.latestNewsDate ? ` / 最新 ${item.latestNewsDate}` : ""}</p>
+                  {item.fallbackReason || item.warning || item.error ? (
+                    <p className="mt-2 rounded-lg border border-yellow-300/20 bg-yellow-300/10 px-3 py-2 text-xs leading-5 text-yellow-100">
+                      {item.fallbackReason || item.warning || item.error}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
+    </div>
+  );
+}
+
+function AuditMetric({ label, value, tone = "default" }: { label: string; value: string | number; tone?: "default" | "green" | "yellow" | "blue" }) {
+  const color = {
+    default: "text-slate-50",
+    green: "text-emerald-300",
+    yellow: "text-yellow-300",
+    blue: "text-sky-300"
+  }[tone];
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-slate-900/75 p-3">
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className={`mt-2 break-words text-lg font-black ${color}`}>{value}</p>
     </div>
   );
 }
@@ -157,5 +242,15 @@ function restoreStoredJobResult(previousStoredResult: string | null) {
     localStorage.setItem(storageKey, previousStoredResult);
   } else {
     localStorage.removeItem(storageKey);
+  }
+}
+
+function readStoredJobResult() {
+  const stored = localStorage.getItem(storageKey);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as AiJobResult;
+  } catch {
+    return null;
   }
 }
