@@ -127,7 +127,7 @@ export default function SettingsPage() {
 
 function formatAiJobError(message: string) {
   const lower = message.toLowerCase();
-  if (lower.includes("quota") || lower.includes("exceeded") || lower.includes("rate limit")) {
+  if (lower.includes("quota") || lower.includes("exceeded") || lower.includes("rate limit") || lower.includes("429")) {
     return [
       "AI Jobは実行されませんでした。",
       "原因: OpenAI APIまたはNews APIの利用上限に達しています。",

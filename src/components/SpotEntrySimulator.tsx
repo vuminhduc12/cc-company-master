@@ -19,6 +19,7 @@ type AiRiskComment = {
   confidence?: "低" | "中" | "高";
   analystView?: string;
   scenarioPrediction?: string;
+  userQuestionAnswer?: string;
   entryPriceComment?: string;
   positionSizeComment: string;
   exitPlanComment: string;
@@ -39,6 +40,11 @@ type Props = {
 };
 
 const accountTypes: SpotAccountType[] = ["taxable", "general", "nisa"];
+const aiQuestionExamples = [
+  "今後1〜2週間で上に行く条件と下に崩れる条件は？",
+  "今この価格付近で入る場合、一番危ないリスクは？",
+  "1〜3か月で伸びる可能性と、その前提が崩れる条件は？"
+];
 
 export function SpotEntrySimulator({ stock, price, news, score }: Props) {
   const currency = stock.ticker.endsWith(".T") || stock.exchange.toUpperCase().includes("TSE") ? "JPY" : "USD";
@@ -54,8 +60,10 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
   const [aiComment, setAiComment] = useState<AiRiskComment | null>(null);
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [aiMode, setAiMode] = useState<"normal" | "detailed">("normal");
+  const [aiRequestHasQuestion, setAiRequestHasQuestion] = useState(false);
   const [aiRuntime, setAiRuntime] = useState<{ mode: "ai" | "rule"; model?: string; warning?: string } | null>(null);
   const [aiError, setAiError] = useState("");
+  const [aiQuestion, setAiQuestion] = useState("");
 
   const input: SpotSimulationInput = useMemo(() => ({
     currency,
@@ -100,11 +108,13 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
     };
   }, [currency]);
 
-  async function requestAiComment(diagnosisMode: "normal" | "detailed") {
+  async function requestAiComment(diagnosisMode: "normal" | "detailed", question = "") {
     setAiStatus("loading");
     setAiMode(diagnosisMode);
     setAiRuntime(null);
     setAiError("");
+    const trimmedQuestion = question.trim();
+    setAiRequestHasQuestion(Boolean(trimmedQuestion));
 
     try {
       const response = await fetch("/api/spot-simulator/ai-comment", {
@@ -112,6 +122,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           diagnosisMode,
+          userQuestion: trimmedQuestion || undefined,
           stock,
           marketMetrics: {
             close: price.close,
@@ -238,7 +249,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div>
                 <p className="text-sm font-bold text-emerald-100">AIリスク診断</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">通常診断は低コストで要点確認、詳細診断は高精度モデルで前提崩れや見落としまで深掘りします。</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">固定診断に加えて、今後の動き・危険ライン・入る前提の弱点を質問できます。回答はBuffett型の元本保全ルールと現在データに基づきます。</p>
               </div>
               <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2">
                 <button
@@ -247,7 +258,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
                   disabled={aiStatus === "loading"}
                   className="h-11 rounded-xl border border-emerald-300/45 bg-emerald-300/15 px-4 text-sm font-black text-emerald-50 transition hover:bg-emerald-300/25 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {aiStatus === "loading" && aiMode === "normal" ? "診断中..." : "通常診断"}
+                  {aiStatus === "loading" && aiMode === "normal" && !aiRequestHasQuestion ? "診断中..." : "通常診断"}
                 </button>
                 <button
                   type="button"
@@ -255,11 +266,47 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
                   disabled={aiStatus === "loading"}
                   className="h-11 rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 text-sm font-black text-amber-50 transition hover:bg-amber-300/25 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {aiStatus === "loading" && aiMode === "detailed" ? "詳細診断中..." : "詳細診断"}
+                  {aiStatus === "loading" && aiMode === "detailed" && !aiRequestHasQuestion ? "詳細診断中..." : "詳細診断"}
                 </button>
               </div>
             </div>
-            <p className="mt-3 text-[11px] leading-5 text-slate-500">詳細診断は高精度モデルを使うため、通常診断よりAPIコストが高くなります。</p>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/45 p-3">
+              <label className="block">
+                <span className="text-xs font-bold text-slate-300">AIに質問</span>
+                <textarea
+                  value={aiQuestion}
+                  onChange={(event) => setAiQuestion(event.target.value)}
+                  rows={3}
+                  maxLength={600}
+                  placeholder={`${stock.ticker}の今後の動き、危険ライン、入るなら何を確認すべきか質問できます`}
+                  className="mt-2 block w-full resize-none rounded-xl border border-white/10 bg-slate-950/70 px-3 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-sky-300/55 focus:bg-slate-950"
+                />
+              </label>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {aiQuestionExamples.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => setAiQuestion(example)}
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-bold text-slate-300 transition hover:border-sky-300/35 hover:bg-sky-300/10 hover:text-sky-100"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[11px] leading-5 text-slate-500">質問ありの場合は詳細診断として、Rule 1/2/3、テクニカル、ニュース、過去類似パターンから条件付きで回答します。</p>
+                <button
+                  type="button"
+                  onClick={() => requestAiComment("detailed", aiQuestion)}
+                  disabled={aiStatus === "loading" || !aiQuestion.trim()}
+                  className="h-11 rounded-xl border border-sky-300/45 bg-sky-300/15 px-4 text-sm font-black text-sky-50 transition hover:bg-sky-300/25 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-40"
+                >
+                  {aiStatus === "loading" && aiRequestHasQuestion ? "回答中..." : "質問して分析"}
+                </button>
+              </div>
+            </div>
+            <p className="mt-3 text-[11px] leading-5 text-slate-500">詳細診断と質問回答は高精度モデルを使うため、通常診断よりAPIコストが高くなります。</p>
             {aiStatus === "error" ? <p className="mt-3 text-sm text-red-200">{aiError}</p> : null}
             {aiComment ? <AiCommentPanel comment={aiComment} mode={aiMode} runtime={aiRuntime} /> : null}
           </div>
@@ -369,6 +416,13 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
           <p className="text-xs font-bold text-sky-100">リアルタイムAIシナリオ予測</p>
           <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.scenarioPrediction}</p>
           <p className="mt-2 text-[11px] leading-5 text-slate-500">予測は現在取得できた価格・ニュース・過去類似パターンに基づく条件付きシナリオで、将来の値動きを保証しません。</p>
+        </div>
+      ) : null}
+      {comment.userQuestionAnswer ? (
+        <div className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-300/[0.07] p-4">
+          <p className="text-xs font-bold text-cyan-100">質問へのAI回答</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.userQuestionAnswer}</p>
+          <p className="mt-2 text-[11px] leading-5 text-slate-500">回答は投資助言ではなく、入力条件と取得データに基づくリスク整理です。</p>
         </div>
       ) : null}
       {runtime?.warning ? (

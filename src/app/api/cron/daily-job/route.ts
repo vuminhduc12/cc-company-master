@@ -297,7 +297,15 @@ URL: ${item.url ?? "なし"}
     })
   });
 
-  if (!response.ok) throw new Error(`OpenAI API error: ${response.status}`);
+  if (!response.ok) {
+    const reason = response.status === 429
+      ? "OpenAIの利用上限またはレート制限に達したため、ルールベース分析に切り替えました。"
+      : `OpenAI API error: ${response.status} のため、ルールベース分析に切り替えました。`;
+    return {
+      ...fallback,
+      aiComment: `${fallback.aiComment} ${reason}`
+    };
+  }
   const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
   return parseAnalysis(payload.choices?.[0]?.message?.content, fallback);
 }
