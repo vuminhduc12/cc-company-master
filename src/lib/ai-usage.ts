@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { createServerSupabase } from "@/lib/supabase";
 
 export type AiUsageFeature = "daily_news_analysis" | "spot_diagnosis" | "spot_question";
 export type AiUsageStatus = "success" | "cache_hit" | "fallback" | "limit_exceeded" | "error";
@@ -57,6 +58,7 @@ const usageLogs: AiUsageLog[] = [];
 const maxLogs = 1000;
 const defaultUserId = "local-user";
 const defaultMonthlyLimit = 200;
+let lastPruneAt = 0;
 
 export function getAiUserId() {
   return defaultUserId;
@@ -85,6 +87,7 @@ export function recordAiUsage(input: Omit<AiUsageLog, "id" | "userId" | "created
   };
   usageLogs.unshift(log);
   if (usageLogs.length > maxLogs) usageLogs.length = maxLogs;
+  void saveAiUsageLogToSupabase(log);
   return log;
 }
 
@@ -219,6 +222,17 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
 export function getAiUsageSummary(userId = defaultUserId): AiUsageSummary {
   const monthStart = startOfMonthIso();
   const monthlyLogs = usageLogs.filter((log) => log.userId === userId && log.createdAt >= monthStart);
+  return buildAiUsageSummary(monthlyLogs, userId, monthStart);
+}
+
+export async function getPersistedAiUsageSummary(userId = defaultUserId): Promise<AiUsageSummary> {
+  const monthStart = startOfMonthIso();
+  const persistedLogs = await loadAiUsageLogsFromSupabase(userId, monthStart);
+  if (persistedLogs) return buildAiUsageSummary(persistedLogs, userId, monthStart);
+  return getAiUsageSummary(userId);
+}
+
+function buildAiUsageSummary(monthlyLogs: AiUsageLog[], userId: string, monthStart: string): AiUsageSummary {
   const monthlyLimit = getMonthlyLimit();
   const billableCalls = monthlyLogs.filter((log) => log.status === "success").length;
   const rateLimitLogs = monthlyLogs.filter((log) => log.errorCode === "429");
@@ -240,6 +254,103 @@ export function getAiUsageSummary(userId = defaultUserId): AiUsageSummary {
     lastRateLimitAt: rateLimitLogs[0]?.createdAt,
     recent: monthlyLogs.slice(0, 20)
   };
+}
+
+async function saveAiUsageLogToSupabase(log: AiUsageLog) {
+  try {
+    const supabase = createServerSupabase();
+    if (!supabase) return;
+    await maybePruneOldAiUsageLogs(supabase);
+    await supabase.from("ai_usage_logs").insert({
+      id: log.id,
+      user_id: log.userId,
+      feature: log.feature,
+      ticker: log.ticker,
+      model: log.model,
+      prompt_version: log.promptVersion,
+      status: log.status,
+      error_code: log.errorCode,
+      error_message: log.errorMessage,
+      used_cache: log.usedCache,
+      input_tokens: log.inputTokens,
+      output_tokens: log.outputTokens,
+      estimated_cost_usd: log.estimatedCostUsd,
+      created_at: log.createdAt
+    });
+  } catch {
+    // Supabase persistence is optional in local/free-tier setups; memory logs still keep the app usable.
+  }
+}
+
+async function loadAiUsageLogsFromSupabase(userId: string, monthStart: string) {
+  const supabase = createServerSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("ai_usage_logs")
+    .select("*")
+    .eq("user_id", userId)
+    .gte("created_at", monthStart)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error || !data) return null;
+  return data.map((row) => aiUsageLogFromRow(row as AiUsageLogRow));
+}
+
+async function maybePruneOldAiUsageLogs(supabase: ReturnType<typeof createServerSupabase>) {
+  if (!supabase) return;
+  const now = Date.now();
+  if (now - lastPruneAt < 6 * 60 * 60 * 1000) return;
+  lastPruneAt = now;
+  const retentionDays = parsePositiveInt(process.env.AI_USAGE_RETENTION_DAYS, 90);
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  await supabase.from("ai_usage_logs").delete().lt("created_at", cutoff);
+}
+
+type AiUsageLogRow = {
+  id?: string | null;
+  user_id?: string | null;
+  feature?: string | null;
+  ticker?: string | null;
+  model?: string | null;
+  prompt_version?: string | null;
+  status?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  used_cache?: boolean | null;
+  input_tokens?: number | string | null;
+  output_tokens?: number | string | null;
+  estimated_cost_usd?: number | string | null;
+  created_at?: string | null;
+};
+
+function aiUsageLogFromRow(row: AiUsageLogRow): AiUsageLog {
+  const feature = row.feature === "daily_news_analysis" || row.feature === "spot_diagnosis" || row.feature === "spot_question"
+    ? row.feature
+    : "spot_diagnosis";
+  const status = row.status === "success" || row.status === "cache_hit" || row.status === "fallback" || row.status === "limit_exceeded" || row.status === "error"
+    ? row.status
+    : "error";
+  return {
+    id: row.id ?? randomUUID(),
+    userId: row.user_id ?? defaultUserId,
+    feature,
+    ticker: row.ticker ?? undefined,
+    model: row.model ?? undefined,
+    promptVersion: row.prompt_version ?? undefined,
+    status,
+    errorCode: row.error_code ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    usedCache: Boolean(row.used_cache),
+    inputTokens: numberFrom(row.input_tokens),
+    outputTokens: numberFrom(row.output_tokens),
+    estimatedCostUsd: numberFrom(row.estimated_cost_usd),
+    createdAt: row.created_at ?? new Date().toISOString()
+  };
+}
+
+function numberFrom(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function canUseAi(feature: AiUsageFeature) {

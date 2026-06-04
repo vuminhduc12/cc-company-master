@@ -103,3 +103,29 @@ create table if not exists public.job_runs (
   result jsonb not null,
   created_at timestamptz not null default now()
 );
+
+create table if not exists public.ai_usage_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null default 'local-user',
+  feature text not null,
+  ticker text,
+  model text,
+  prompt_version text,
+  status text not null,
+  error_code text,
+  error_message text,
+  used_cache boolean not null default false,
+  input_tokens integer not null default 0,
+  output_tokens integer not null default 0,
+  estimated_cost_usd numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ai_usage_logs_user_created_idx
+  on public.ai_usage_logs (user_id, created_at desc);
+
+create index if not exists ai_usage_logs_status_created_idx
+  on public.ai_usage_logs (status, created_at desc);
+
+create index if not exists ai_usage_logs_feature_created_idx
+  on public.ai_usage_logs (feature, created_at desc);
