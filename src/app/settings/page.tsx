@@ -10,12 +10,42 @@ import type { AiJobResult } from "@/types";
 
 const storageKey = "d-finance-ai-job-result";
 
+type AiUsageSummary = {
+  monthlyLimit: number;
+  monthStart: string;
+  totalCalls: number;
+  billableCalls: number;
+  remainingCalls: number;
+  cacheHits: number;
+  fallbackCount: number;
+  limitExceededCount: number;
+  rateLimitCount: number;
+  errorCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+  lastRateLimitAt?: string;
+  recent: Array<{
+    id: string;
+    feature: string;
+    ticker?: string;
+    model?: string;
+    status: string;
+    errorCode?: string;
+    errorMessage?: string;
+    usedCache: boolean;
+    estimatedCostUsd: number;
+    createdAt: string;
+  }>;
+};
+
 export default function SettingsPage() {
   const userWatchlist = useUserWatchlist();
   const [cronSecret, setCronSecret] = useState("");
   const [status, setStatus] = useState<"idle" | "running" | "completed" | "error">("idle");
   const [message, setMessage] = useState("");
   const [latestJobResult, setLatestJobResult] = useState<AiJobResult | null>(null);
+  const [usageSummary, setUsageSummary] = useState<AiUsageSummary | null>(null);
   const executionAudit = resolveAiJobAudit(latestJobResult);
 
   useEffect(() => {
@@ -27,6 +57,20 @@ export default function SettingsPage() {
       setLatestJobResult(null);
     }
   }, []);
+
+  useEffect(() => {
+    void refreshAiUsageSummary();
+  }, []);
+
+  async function refreshAiUsageSummary() {
+    try {
+      const response = await fetch("/api/ai-usage/summary", { cache: "no-store" });
+      const payload = await response.json() as { ok: true; summary: AiUsageSummary } | { ok: false; error?: string };
+      if (response.ok && payload.ok) setUsageSummary(payload.summary);
+    } catch {
+      setUsageSummary(null);
+    }
+  }
 
   async function runAiJob() {
     setStatus("running");
@@ -71,12 +115,14 @@ export default function SettingsPage() {
         setLatestJobResult(readStoredJobResult());
         setMessage(formatAiJobError(result.error ?? "Unknown error"));
       }
+      await refreshAiUsageSummary();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       restoreStoredJobResult(previousStoredResult);
       setLatestJobResult(readStoredJobResult());
       setStatus("error");
       setMessage(formatAiJobError(errorMessage));
+      await refreshAiUsageSummary();
     }
   }
 
@@ -190,6 +236,58 @@ export default function SettingsPage() {
           </div>
         ) : null}
       </section>
+
+      <section className="rounded-2xl border border-amber-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-300">OpenAI Usage Guard</p>
+            <h3 className="mt-2 text-lg font-semibold text-slate-50">AI使用量・429フォールバック</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              OpenAI呼び出し前に月間/日次上限を確認し、429や上限超過時はルールベース分析へ切り替えます。
+            </p>
+          </div>
+          <button
+            className="w-fit rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs font-black text-amber-100 hover:bg-amber-300/15"
+            onClick={() => void refreshAiUsageSummary()}
+          >
+            再読込
+          </button>
+        </div>
+        {usageSummary ? (
+          <>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AuditMetric label="AI使用回数" value={`${usageSummary.billableCalls}/${usageSummary.monthlyLimit}`} tone={usageSummary.remainingCalls <= 5 ? "yellow" : "blue"} />
+              <AuditMetric label="残り回数" value={usageSummary.remainingCalls} tone={usageSummary.remainingCalls <= 5 ? "yellow" : "green"} />
+              <AuditMetric label="429発生" value={usageSummary.rateLimitCount} tone={usageSummary.rateLimitCount ? "yellow" : "green"} />
+              <AuditMetric label="推定コスト" value={`$${usageSummary.estimatedCostUsd.toFixed(4)}`} />
+              <AuditMetric label="キャッシュ再利用" value={usageSummary.cacheHits} tone="green" />
+              <AuditMetric label="ルール切替" value={usageSummary.fallbackCount} tone={usageSummary.fallbackCount ? "yellow" : "green"} />
+              <AuditMetric label="ローカル上限超過" value={usageSummary.limitExceededCount} tone={usageSummary.limitExceededCount ? "yellow" : "green"} />
+              <AuditMetric label="最終429" value={usageSummary.lastRateLimitAt ? formatDateTime(usageSummary.lastRateLimitAt) : "-"} />
+            </div>
+            <div className="mt-4 space-y-2">
+              {usageSummary.recent.length ? usageSummary.recent.slice(0, 8).map((item) => (
+                <div key={item.id} className="grid gap-2 rounded-xl border border-white/10 bg-slate-950/45 p-3 text-xs text-slate-300 sm:grid-cols-[110px_1fr_auto] sm:items-center">
+                  <span className={item.status === "success" || item.status === "cache_hit" ? "font-black text-emerald-300" : item.status === "fallback" || item.status === "limit_exceeded" ? "font-black text-yellow-300" : "font-black text-red-300"}>
+                    {item.status}
+                  </span>
+                  <span className="min-w-0 break-words">
+                    {item.feature}{item.ticker ? ` / ${item.ticker}` : ""}{item.model ? ` / ${item.model}` : ""}
+                    {item.errorMessage ? ` / ${item.errorMessage}` : ""}
+                  </span>
+                  <span className="text-slate-500">{formatDateTime(item.createdAt)}</span>
+                </div>
+              )) : (
+                <p className="rounded-xl border border-white/10 bg-slate-950/45 p-3 text-sm text-slate-500">まだAI使用履歴はありません。</p>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 rounded-xl border border-white/10 bg-slate-950/45 p-3 text-sm text-slate-500">
+            使用量データを読み込み中、またはまだ履歴がありません。
+          </p>
+        )}
+      </section>
     </div>
   );
 }
@@ -253,4 +351,17 @@ function readStoredJobResult() {
   } catch {
     return null;
   }
+}
+
+function formatDateTime(value: string | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }

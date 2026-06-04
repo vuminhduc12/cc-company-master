@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callOpenAiChatWithUsageGuard, recordAiCacheHit } from "@/lib/ai-usage";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport, watchlist } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
@@ -259,6 +260,18 @@ type NewsAnalysis = {
   aiComment: string;
 };
 
+type OpenAiNewsPayload = {
+  choices?: Array<{ message?: { content?: string } }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
+  error?: {
+    message?: string;
+    code?: string;
+  };
+};
+
 async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock) {
   const fallback = ruleBasedAnalysis(item, price);
   const key = process.env.OPENAI_API_KEY;
@@ -275,6 +288,12 @@ async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock) {
   });
   const cached = getOpenAiCache<NewsAnalysis>(cacheKey);
   if (cached) {
+    recordAiCacheHit({
+      feature: "daily_news_analysis",
+      ticker: stock.ticker,
+      model: "gpt-4o-mini",
+      promptVersion: "daily-news-analysis-v1"
+    });
     return {
       ...cached,
       aiComment: `${cached.aiComment} 短時間の同一ニュース分析をキャッシュから再利用しました。`
@@ -305,30 +324,27 @@ URL: ${item.url ?? "なし"}
 返却形式:
 {"sentiment":"Positive | Neutral | Negative","impactScore":1,"plainSummary":"","shortTermImpact":"","midTermImpact":"","riskPoints":[],"opportunityPoints":[],"aiComment":""}`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${key}`
-    },
-    body: JSON.stringify({
+  const aiResult = await callOpenAiChatWithUsageGuard<OpenAiNewsPayload>({
+    feature: "daily_news_analysis",
+    ticker: stock.ticker,
+    model: "gpt-4o-mini",
+    promptVersion: "daily-news-analysis-v1",
+    estimatedInputTokens: Math.ceil(prompt.length / 4),
+    apiKey: key,
+    body: {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" }
-    })
+    }
   });
 
-  if (!response.ok) {
-    const reason = response.status === 429
-      ? "OpenAIの利用上限またはレート制限に達したため、ルールベース分析に切り替えました。"
-      : `OpenAI API error: ${response.status} のため、ルールベース分析に切り替えました。`;
+  if (!aiResult.ok) {
     return {
       ...fallback,
-      aiComment: `${fallback.aiComment} ${reason}`
+      aiComment: `${fallback.aiComment} ${aiResult.warning ?? "OpenAI APIエラーのため、ルールベース分析に切り替えました。"}`
     };
   }
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-  const analysis = parseAnalysis(payload.choices?.[0]?.message?.content, fallback);
+  const analysis = parseAnalysis(aiResult.payload?.choices?.[0]?.message?.content, fallback);
   setOpenAiCache(cacheKey, analysis, newsAnalysisCacheTtlMs);
   return analysis;
 }

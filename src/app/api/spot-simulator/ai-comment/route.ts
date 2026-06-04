@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { callOpenAiChatWithUsageGuard, recordAiCacheHit } from "@/lib/ai-usage";
 import { buildSpotSimulatorPrompt, getOpenAiModel } from "@/lib/ai-prompts";
 import { mergePriceSeries } from "@/lib/indicators";
 import { getPricesForTicker } from "@/lib/mock-data";
@@ -94,6 +95,18 @@ type CachedAiComment = {
   model: string;
 };
 
+type OpenAiSpotPayload = {
+  choices?: Array<{ message?: { content?: string } }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
+  error?: {
+    message?: string;
+    code?: string;
+  };
+};
+
 const spotAiCacheTtlMs = 10 * 60 * 1000;
 
 export async function POST(request: Request) {
@@ -161,16 +174,16 @@ export async function POST(request: Request) {
     });
     const cached = getOpenAiCache<CachedAiComment>(cacheKey);
     if (cached) {
+      recordAiCacheHit({
+        feature: userQuestion ? "spot_question" : "spot_diagnosis",
+        ticker: body.stock.ticker,
+        model: cached.model,
+        promptVersion: diagnosisMode
+      });
       return NextResponse.json({ ok: true, mode: "ai", diagnosisMode, model: cached.model, analysis: cached.analysis, realtime: enrichment, ruleRisk, simulation, cached: true, warning: "短時間の同一AI診断をキャッシュから再利用しました。" });
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
+    const requestBody = {
         model,
         temperature: diagnosisMode === "detailed" ? 0.35 : 0.2,
         response_format: { type: "json_object" },
@@ -186,15 +199,22 @@ export async function POST(request: Request) {
             })
           }
         ]
-      })
+      };
+    const aiResult = await callOpenAiChatWithUsageGuard<OpenAiSpotPayload>({
+      feature: userQuestion ? "spot_question" : "spot_diagnosis",
+      ticker: body.stock.ticker,
+      model,
+      promptVersion: diagnosisMode,
+      estimatedInputTokens: Math.ceil(JSON.stringify(requestBody).length / 4),
+      apiKey: process.env.OPENAI_API_KEY,
+      body: requestBody
     });
 
-    if (!response.ok) {
-      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, model, analysis: fallback, realtime: enrichment, ruleRisk, simulation, warning: `OpenAI API returned ${response.status}` });
+    if (!aiResult.ok) {
+      return NextResponse.json({ ok: true, mode: "rule", diagnosisMode, model, analysis: fallback, realtime: enrichment, ruleRisk, simulation, warning: aiResult.warning ?? `OpenAI API returned ${aiResult.status}` });
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = aiResult.payload?.choices?.[0]?.message?.content;
     const parsed = parseAiComment(content, fallback);
     setOpenAiCache(cacheKey, { analysis: parsed, model }, spotAiCacheTtlMs);
     return NextResponse.json({ ok: true, mode: "ai", diagnosisMode, model, analysis: parsed, realtime: enrichment, ruleRisk, simulation });
