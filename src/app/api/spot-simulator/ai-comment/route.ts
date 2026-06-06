@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { callOpenAiChatWithUsageGuard, recordAiCacheHit } from "@/lib/ai-usage";
+import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
 import { buildSpotSimulatorPrompt, getOpenAiModel } from "@/lib/ai-prompts";
 import { mergePriceSeries } from "@/lib/indicators";
 import { getPricesForTicker } from "@/lib/mock-data";
@@ -112,6 +112,7 @@ const spotAiCacheTtlMs = 10 * 60 * 1000;
 export async function POST(request: Request) {
   try {
     const body = await request.json() as RequestBody;
+    const aiUserId = await resolveAiUserIdFromRequest(request);
     if (!body.stock || !body.input) {
       return NextResponse.json({ ok: false, error: "stock and input are required" }, { status: 400 });
     }
@@ -176,6 +177,7 @@ export async function POST(request: Request) {
     if (cached) {
       recordAiCacheHit({
         feature: userQuestion ? "spot_question" : "spot_diagnosis",
+        userId: aiUserId,
         ticker: body.stock.ticker,
         model: cached.model,
         promptVersion: diagnosisMode
@@ -202,6 +204,7 @@ export async function POST(request: Request) {
       };
     const aiResult = await callOpenAiChatWithUsageGuard<OpenAiSpotPayload>({
       feature: userQuestion ? "spot_question" : "spot_diagnosis",
+      userId: aiUserId,
       ticker: body.stock.ticker,
       model,
       promptVersion: diagnosisMode,

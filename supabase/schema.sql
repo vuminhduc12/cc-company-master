@@ -129,3 +129,41 @@ create index if not exists ai_usage_logs_status_created_idx
 
 create index if not exists ai_usage_logs_feature_created_idx
   on public.ai_usage_logs (feature, created_at desc);
+
+create table if not exists public.watchlist_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  ticker text not null,
+  market text not null default 'us',
+  item jsonb,
+  removed boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, ticker)
+);
+
+create index if not exists watchlist_items_user_ticker_idx
+  on public.watchlist_items (user_id, ticker);
+
+alter table public.watchlist_items enable row level security;
+
+drop policy if exists "watchlist_items_select_own" on public.watchlist_items;
+create policy "watchlist_items_select_own"
+  on public.watchlist_items for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "watchlist_items_insert_own" on public.watchlist_items;
+create policy "watchlist_items_insert_own"
+  on public.watchlist_items for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "watchlist_items_update_own" on public.watchlist_items;
+create policy "watchlist_items_update_own"
+  on public.watchlist_items for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "watchlist_items_delete_own" on public.watchlist_items;
+create policy "watchlist_items_delete_own"
+  on public.watchlist_items for delete
+  using (auth.uid() = user_id);

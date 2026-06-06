@@ -12,13 +12,19 @@ import {
   customWatchlistStorageKey,
   isJapaneseTicker,
   loadCustomWatchItems,
+  loadDbWatchlistState,
   loadRemovedWatchTickers,
+  markDbWatchTickerRemoved,
+  migrateLocalWatchlistToDb,
   normalizeTickerForMarket,
   removedWatchlistStorageKey,
+  restoreDbRemovedDefaults,
+  saveDbWatchItem,
   type CustomWatchItem,
   type SearchMarket
 } from "@/lib/user-watchlist";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import type { DailyPrice, Stock, WatchStatus } from "@/types";
 
 type WatchlistLookupResult = {
@@ -36,6 +42,7 @@ type WatchlistLookupResult = {
 
 export default function WatchlistPage() {
   const jobResult = useAiJobResult();
+  const auth = useSupabaseAuth();
   const [market, setMarket] = useState<SearchMarket>("us");
   const [ticker, setTicker] = useState("RGTI");
   const [customItems, setCustomItems] = useState<CustomWatchItem[]>([]);
@@ -45,6 +52,7 @@ export default function WatchlistPage() {
   const [refreshStatus, setRefreshStatus] = useState<"idle" | "running" | "error">("idle");
   const [message, setMessage] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const [syncMode, setSyncMode] = useState<"local" | "supabase">("local");
   const defaultTickerSet = useMemo(() => new Set(watchlist.map((item) => item.stock.ticker)), []);
 
   useEffect(() => {
@@ -62,6 +70,36 @@ export default function WatchlistPage() {
     if (!storageReady) return;
     localStorage.setItem(removedWatchlistStorageKey, JSON.stringify(removedTickers));
   }, [removedTickers, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    if (!auth.user) {
+      setSyncMode("local");
+      return;
+    }
+    let cancelled = false;
+    async function loadDbState() {
+      const localCustom = loadCustomWatchItems();
+      const localRemoved = loadRemovedWatchTickers();
+      const dbState = await loadDbWatchlistState(auth.user!.id);
+      if (cancelled || !dbState) return;
+      if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustom.length || localRemoved.length)) {
+        await migrateLocalWatchlistToDb(auth.user!.id, localCustom, localRemoved);
+        if (!cancelled) {
+          setSyncMode("supabase");
+          setMessage("ローカルWatchlistをSupabaseへ移行しました。");
+        }
+        return;
+      }
+      setCustomItems(dbState.customItems);
+      setRemovedTickers(dbState.removedTickers);
+      setSyncMode("supabase");
+    }
+    void loadDbState();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.user, storageReady]);
 
   const defaultItems = useMemo(() => {
     return watchlist.filter((item) => !removedTickers.includes(item.stock.ticker)).map<CustomWatchItem>((item) => {
@@ -131,19 +169,22 @@ export default function WatchlistPage() {
     };
     setRemovedTickers((current) => current.filter((tickerValue) => tickerValue !== item.stock.ticker));
     setCustomItems((current) => [item, ...current.filter((row) => row.stock.ticker !== item.stock.ticker)]);
-    setMessage(`${item.stock.ticker}をWatchlistに追加しました。`);
+    if (auth.user) void saveDbWatchItem(auth.user.id, item);
+    setMessage(`${item.stock.ticker}をWatchlistに追加しました。${auth.user ? " Supabaseにも保存しました。" : ""}`);
   }
 
   function deleteTicker(tickerToDelete: string) {
     setCustomItems((current) => current.filter((item) => item.stock.ticker !== tickerToDelete));
     setRemovedTickers((current) => current.includes(tickerToDelete) ? current : [...current, tickerToDelete]);
     if (lookupResult?.stock.ticker === tickerToDelete) setLookupResult(null);
-    setMessage(`${tickerToDelete}をWatchlistから削除しました。`);
+    if (auth.user) void markDbWatchTickerRemoved(auth.user.id, tickerToDelete, isJapaneseTicker(tickerToDelete) ? "jp" : "us");
+    setMessage(`${tickerToDelete}をWatchlistから削除しました。${auth.user ? " Supabaseにも反映しました。" : ""}`);
   }
 
   function restoreDefaults() {
     setRemovedTickers([]);
-    setMessage("初期Watchlist銘柄を復元しました。");
+    if (auth.user) void restoreDbRemovedDefaults(auth.user.id);
+    setMessage(`初期Watchlist銘柄を復元しました。${auth.user ? " Supabaseにも反映しました。" : ""}`);
   }
 
   async function refreshAll() {
@@ -197,6 +238,10 @@ export default function WatchlistPage() {
             </p>
             <p className="mt-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2 text-xs leading-5 text-emerald-100">
               データ取得優先順位: <span className="font-black">{stockDataProviderPriorityLabel}</span>
+            </p>
+            <p className="mt-2 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-2 text-xs leading-5 text-cyan-100">
+              保存モード: <span className="font-black">{syncMode === "supabase" ? `Supabase DB同期 (${auth.email})` : "localStorage"}</span>
+              <span className="text-cyan-100/75">。ログインすると別端末でもWatchlistを復元できます。</span>
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <WatchStat label="表示銘柄" value={`${visibleItems.length}`} />
@@ -304,16 +349,11 @@ export default function WatchlistPage() {
       <DataTable
         headers={["Ticker", "会社名", "市場", "現在値", "前日比", "スコア", "ステータス", "ソース", "メモ", "操作"]}
         rows={visibleItems.map((item) => {
-          const hasDetail = Boolean(pricesByTicker[item.stock.ticker]);
           const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
           return [
-            hasDetail ? (
-              <Link key="ticker" className="font-bold text-sky-300 hover:text-sky-200" href={`/stocks/${item.stock.ticker}`}>
-                {item.stock.ticker}
-              </Link>
-            ) : (
-              <span key="ticker" className="font-bold text-slate-200">{item.stock.ticker}</span>
-            ),
+            <Link key="ticker" className="font-bold text-sky-300 hover:text-sky-200" href={`/stocks/${item.stock.ticker}`}>
+              {item.stock.ticker}
+            </Link>,
             item.stock.companyName,
             item.stock.exchange,
             formatPrice(item.stock.ticker, item.currentPrice),

@@ -9,6 +9,7 @@ import {
   saveAiDiagnosisHistory,
   type AiDiagnosisHistoryItem
 } from "@/lib/ai-diagnosis-history";
+import { authHeaders } from "@/lib/auth-fetch";
 import {
   accountTypeLabel,
   calculateSpotSimulation,
@@ -131,7 +132,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
     try {
       const response = await fetch("/api/spot-simulator/ai-comment", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...await authHeaders() },
         body: JSON.stringify({
           diagnosisMode,
           userQuestion: trimmedQuestion || undefined,

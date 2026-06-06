@@ -64,6 +64,16 @@ export function getAiUserId() {
   return defaultUserId;
 }
 
+export async function resolveAiUserIdFromRequest(request: Request) {
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return defaultUserId;
+  const supabase = createServerSupabase();
+  if (!supabase) return defaultUserId;
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user?.id) return defaultUserId;
+  return data.user.id;
+}
+
 export function recordAiUsage(input: Omit<AiUsageLog, "id" | "userId" | "createdAt" | "estimatedCostUsd"> & {
   userId?: string;
   createdAt?: string;
@@ -93,6 +103,7 @@ export function recordAiUsage(input: Omit<AiUsageLog, "id" | "userId" | "created
 
 export function recordAiCacheHit(input: {
   feature: AiUsageFeature;
+  userId?: string;
   ticker?: string;
   model?: string;
   promptVersion?: string;
@@ -108,6 +119,7 @@ export function recordAiCacheHit(input: {
 
 export async function callOpenAiChatWithUsageGuard<T>(input: {
   feature: AiUsageFeature;
+  userId?: string;
   ticker?: string;
   model: string;
   promptVersion?: string;
@@ -115,9 +127,11 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
   body: Record<string, unknown>;
   apiKey?: string;
 }): Promise<OpenAiChatResult<T>> {
-  const allowed = canUseAi(input.feature);
+  const userId = input.userId ?? defaultUserId;
+  const allowed = canUseAi(input.feature, userId);
   if (!allowed.allowed) {
     recordAiUsage({
+      userId,
       feature: input.feature,
       ticker: input.ticker,
       model: input.model,
@@ -140,6 +154,7 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
 
   if (!input.apiKey) {
     recordAiUsage({
+      userId,
       feature: input.feature,
       ticker: input.ticker,
       model: input.model,
@@ -183,6 +198,7 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
     const errorCode = String(payload?.error?.code ?? response.status);
     const errorMessage = payload?.error?.message ?? `OpenAI API returned ${response.status}`;
     recordAiUsage({
+      userId,
       feature: input.feature,
       ticker: input.ticker,
       model: input.model,
@@ -207,6 +223,7 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
   }
 
   recordAiUsage({
+    userId,
     feature: input.feature,
     ticker: input.ticker,
     model: input.model,
@@ -353,15 +370,15 @@ function numberFrom(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function canUseAi(feature: AiUsageFeature) {
-  const summary = getAiUsageSummary();
+function canUseAi(feature: AiUsageFeature, userId = defaultUserId) {
+  const summary = getAiUsageSummary(userId);
   const monthlyLimit = getMonthlyLimit();
   if (summary.billableCalls >= monthlyLimit) {
     return { allowed: false, reason: `月間AI利用上限 ${monthlyLimit} 回に達しています。` };
   }
   const dailyLimit = getDailyLimit(feature);
   const today = new Date().toISOString().slice(0, 10);
-  const todaySuccess = usageLogs.filter((log) => log.createdAt.startsWith(today) && log.status === "success" && log.feature === feature).length;
+  const todaySuccess = usageLogs.filter((log) => log.userId === userId && log.createdAt.startsWith(today) && log.status === "success" && log.feature === feature).length;
   if (todaySuccess >= dailyLimit) {
     return { allowed: false, reason: `本日の${feature}利用上限 ${dailyLimit} 回に達しています。` };
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenAiChatWithUsageGuard, recordAiCacheHit } from "@/lib/ai-usage";
+import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport, watchlist } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
@@ -39,6 +39,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   }
 
   try {
+    const aiUserId = await resolveAiUserIdFromRequest(request);
     const lastRun = nowJst();
     const nextRun = nextRunJst();
     const manualStocks = source === "manual" ? await parseManualStocks(request) : [];
@@ -55,7 +56,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
       : watchlist;
     const stockResults: StockAnalysisResult[] = [];
     for (const item of targets) {
-      stockResults.push(await buildStockAnalysis(item.stock, hasAiKeys));
+      stockResults.push(await buildStockAnalysis(item.stock, hasAiKeys, aiUserId));
     }
     const successfulResults = stockResults.filter((item) => !item.error);
     if (successfulResults.length === 0) {
@@ -133,14 +134,14 @@ function authorize(request: NextRequest, source: "cron" | "manual") {
   return NextResponse.json(buildErrorResult("Invalid CRON_SECRET."), { status: 401 });
 }
 
-async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean): Promise<StockAnalysisResult> {
+async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean, aiUserId: string): Promise<StockAnalysisResult> {
   try {
     const stockData = await fetchStockData(stock.ticker);
     const priceData = stockData.prices;
     const latest = priceData[priceData.length - 1];
     if (!latest) throw new Error("No price data available.");
     const rawNews = await fetchNews(stock);
-    const analyzedNews = await analyzeNews(rawNews, latest, stock);
+    const analyzedNews = await analyzeNews(rawNews, latest, stock, aiUserId);
     const scoreAnalysis = analyzeStock(latest, analyzedNews);
     const aiMarketScore = scoreAnalysis.score;
     const status = statusFromScore(aiMarketScore);
@@ -234,9 +235,9 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
   return newsItems.length ? newsItems : savedNews;
 }
 
-async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock): Promise<NewsItem[]> {
+async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock, aiUserId: string): Promise<NewsItem[]> {
   return Promise.all(items.map(async (item) => {
-    const analysis = await analyzeOneNews(item, price, stock);
+    const analysis = await analyzeOneNews(item, price, stock, aiUserId);
     return {
       ...item,
       sentiment: analysis.sentiment,
@@ -272,7 +273,7 @@ type OpenAiNewsPayload = {
   };
 };
 
-async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock) {
+async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock, aiUserId: string) {
   const fallback = ruleBasedAnalysis(item, price);
   const key = process.env.OPENAI_API_KEY;
   if (!key) return fallback;
@@ -290,6 +291,7 @@ async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock) {
   if (cached) {
     recordAiCacheHit({
       feature: "daily_news_analysis",
+      userId: aiUserId,
       ticker: stock.ticker,
       model: "gpt-4o-mini",
       promptVersion: "daily-news-analysis-v1"
@@ -326,6 +328,7 @@ URL: ${item.url ?? "なし"}
 
   const aiResult = await callOpenAiChatWithUsageGuard<OpenAiNewsPayload>({
     feature: "daily_news_analysis",
+    userId: aiUserId,
     ticker: stock.ticker,
     model: "gpt-4o-mini",
     promptVersion: "daily-news-analysis-v1",

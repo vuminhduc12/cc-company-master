@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AuthPanel } from "@/components/AuthPanel";
 import { resolveAiJobAudit } from "@/lib/ai-job-audit";
+import { authHeaders } from "@/lib/auth-fetch";
 import { stockDataProviderPolicyNote, stockDataProviderPriority, stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { aiTasks, news, prices, report } from "@/lib/mock-data";
 import { scoreStock } from "@/lib/scoring";
@@ -64,7 +66,10 @@ export default function SettingsPage() {
 
   async function refreshAiUsageSummary() {
     try {
-      const response = await fetch("/api/ai-usage/summary", { cache: "no-store" });
+      const response = await fetch("/api/ai-usage/summary", {
+        cache: "no-store",
+        headers: await authHeaders()
+      });
       const payload = await response.json() as { ok: true; summary: AiUsageSummary } | { ok: false; error?: string };
       if (response.ok && payload.ok) setUsageSummary(payload.summary);
     } catch {
@@ -98,6 +103,7 @@ export default function SettingsPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
+          ...await authHeaders(),
           ...(cronSecret ? { "x-cron-secret": cronSecret } : {})
         },
         body: JSON.stringify({
@@ -135,6 +141,9 @@ export default function SettingsPage() {
           自動更新時間、監視銘柄、AI分析の強さ、手動実行をここで管理します。APIキーは.env.localで管理し、画面には表示しません。
         </p>
       </div>
+
+      <AuthPanel />
+
       <div className="grid gap-4 md:grid-cols-2">
         <label className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-sm text-slate-300 shadow-xl shadow-black/20 ring-1 ring-white/5">
           データ更新時間
