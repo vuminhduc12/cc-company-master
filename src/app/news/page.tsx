@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { NewsCard } from "@/components/NewsCard";
 import { news, watchlist } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
@@ -32,6 +33,7 @@ export default function NewsPage() {
 
   return (
     <div className="space-y-6">
+      <LiveWatchlistStrip />
       <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>

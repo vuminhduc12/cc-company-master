@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AuthPanel } from "@/components/AuthPanel";
+import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { resolveAiJobAudit } from "@/lib/ai-job-audit";
 import { authHeaders } from "@/lib/auth-fetch";
 import { stockDataProviderPolicyNote, stockDataProviderPriority, stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
@@ -166,6 +167,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5">
+      <LiveWatchlistStrip />
       <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Control Center</p>
         <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">Settings</h2>

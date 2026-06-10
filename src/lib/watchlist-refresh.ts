@@ -1,5 +1,10 @@
+import { resolvePriceSeries } from "@/lib/indicators";
+import { pricesByTicker, watchlist } from "@/lib/mock-data";
+import { statusFromScore } from "@/lib/scoring";
 import type { CustomWatchItem, SearchMarket } from "@/lib/user-watchlist";
+import { isJapaneseTicker } from "@/lib/user-watchlist";
 import type { WatchlistLookupPayload } from "@/lib/watchlist-lookup";
+import type { AiJobResult } from "@/types";
 
 export type WatchlistRefreshFailure = {
   ticker: string;
@@ -61,6 +66,41 @@ export function mergeRefreshedCustomItems(current: CustomWatchItem[], refreshed:
     }
   });
   return nextCustom;
+}
+
+export function buildDefaultCustomItems(removedTickers: string[], jobResult: AiJobResult | null) {
+  return watchlist
+    .filter((item) => !removedTickers.includes(item.stock.ticker))
+    .map<CustomWatchItem>((item) => {
+      const live = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker);
+      const rowBasePrices = pricesByTicker[item.stock.ticker];
+      const rowResolved = rowBasePrices ? resolvePriceSeries(rowBasePrices, live?.prices, live?.price) : null;
+      const rowLatest = rowResolved?.prices.at(-1);
+      const currentPrice = rowLatest?.close ?? live?.price.close ?? item.currentPrice;
+      const previousClose = rowResolved?.prices.at(-2)?.close ?? (live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose);
+      return {
+        stock: item.stock,
+        shares: item.shares,
+        averagePrice: item.averagePrice,
+        currentPrice,
+        previousClose,
+        status: live?.status ?? (jobResult && item.stock.ticker === "RGTI" ? statusFromScore(jobResult.aiMarketScore) : item.status),
+        memo: live ? `Data Freshness: ${live.dataFreshness}` : item.memo,
+        market: isJapaneseTicker(item.stock.ticker) ? "jp" : "us",
+        score: live?.aiMarketScore ?? (item.stock.ticker === "RGTI" && jobResult ? jobResult.aiMarketScore : undefined),
+        source: live ? "AI Job" : "Local default",
+        fetchedAt: live?.dataFreshness
+      };
+    });
+}
+
+export function mergeVisibleWatchItems(customItems: CustomWatchItem[], removedTickers: string[], jobResult: AiJobResult | null) {
+  const map = new Map<string, CustomWatchItem>();
+  buildDefaultCustomItems(removedTickers, jobResult).forEach((item) => map.set(item.stock.ticker, item));
+  customItems.forEach((item) => {
+    if (!removedTickers.includes(item.stock.ticker)) map.set(item.stock.ticker, item);
+  });
+  return [...map.values()].sort((a, b) => a.stock.ticker.localeCompare(b.stock.ticker));
 }
 
 export function needsRealtimeRefresh(item: CustomWatchItem) {

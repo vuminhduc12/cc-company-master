@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { WatchlistProvider } from "@/lib/watchlist-context";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 
 const links = [
@@ -101,7 +102,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : null}
         </div>
       </header>
-      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+      <WatchlistProvider>
+        <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+      </WatchlistProvider>
     </div>
   );
 }

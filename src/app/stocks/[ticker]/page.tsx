@@ -12,24 +12,11 @@ import { resolvePriceSeries } from "@/lib/indicators";
 import { analyzePatternSimilarity, type PatternHorizon } from "@/lib/pattern-similarity";
 import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
+import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useUserWatchlist } from "@/lib/user-watchlist";
-import type { DailyPrice, NewsItem, Stock, WatchStatus, WatchlistItem } from "@/types";
-
-type HistoryApiResult = {
-  ok: true;
-  stock: Stock;
-  prices: DailyPrice[];
-  price: DailyPrice;
-  news: NewsItem[];
-  score: number;
-  status: WatchStatus;
-  mode: "live" | "mock";
-  provider: "yahoo" | "alpha_vantage" | "saved" | "local";
-  sourceLabel: string;
-  warning?: string;
-  fetchedAt: string;
-};
+import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
+import type { DailyPrice, NewsItem, Stock, WatchlistItem } from "@/types";
 
 const emptyDailyPrices: DailyPrice[] = [];
 const decisionNavItems = [
@@ -46,9 +33,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const normalizedTicker = normalizeTicker(ticker);
   const jobResult = useAiJobResult();
   const userWatchlist = useUserWatchlist();
-  const [historyData, setHistoryData] = useState<HistoryApiResult | null>(null);
-  const [historyStatus, setHistoryStatus] = useState<"loading" | "done" | "error">("loading");
-  const [historyError, setHistoryError] = useState("");
+  const { historyData, historyStatus, historyError, realtimeQuote } = useStockLiveData(normalizedTicker);
   const [activeSection, setActiveSection] = useState<(typeof decisionNavItems)[number]["id"]>("conclusion");
 
   const watchItem = userWatchlist.items.find((row) => row.stock.ticker === normalizedTicker)
@@ -63,15 +48,19 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const resolvedPrices = basePrices.length ? resolvePriceSeries(basePrices, live?.prices ?? activeHistoryData?.prices, livePrice) : null;
   const mergedPrices = resolvedPrices?.prices ?? emptyDailyPrices;
   const latest = mergedPrices.at(-1);
-  const latestPriceText = latest ? formatStockPrice(latest.close, stock) : "-";
+  const displayClose = realtimeQuote?.regular.price ?? latest?.close;
+  const displayChangePercent = realtimeQuote?.regular.changePercent ?? latest?.changePercent ?? 0;
+  const latestPriceText = displayClose ? formatStockPrice(displayClose, stock) : "-";
   const tickerNews = live?.news?.length
     ? live.news
     : activeHistoryData?.news?.length
       ? activeHistoryData.news
       : localNews.filter((newsItem) => newsItem.ticker === stock.ticker);
-  const sourceLabel = live
-    ? resolvedPrices?.source ?? "AI Job"
-    : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
+  const sourceLabel = realtimeQuote
+    ? `${realtimeQuote.source} / live`
+    : live
+      ? resolvedPrices?.source ?? "AI Job"
+      : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
   const detailItems = userWatchlist.ready ? userWatchlist.items : watchlist;
   const isWatchlistFallbackOnly = Boolean(watchItem && !localPrices && !activeHistoryData?.prices?.length && !live?.prices?.length);
   const chartPrices = mergedPrices;
@@ -84,37 +73,6 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     neutral: tickerNews.filter((newsItem) => newsItem.sentiment === "Neutral").length,
     negative: tickerNews.filter((newsItem) => newsItem.sentiment === "Negative").length
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadHistory() {
-      setHistoryStatus("loading");
-      setHistoryError("");
-      try {
-        const response = await fetch(`/api/stocks/${encodeURIComponent(normalizedTicker)}/history`, { cache: "no-store" });
-        const data = await response.json() as HistoryApiResult | { ok: false; error?: string };
-        if (cancelled) return;
-        if (!response.ok || !data.ok) {
-          setHistoryData(null);
-          setHistoryStatus("error");
-          setHistoryError("error" in data ? data.error ?? "株価履歴を取得できませんでした。" : "株価履歴を取得できませんでした。");
-          return;
-        }
-        setHistoryData(data);
-        setHistoryStatus("done");
-      } catch (error) {
-        if (!cancelled) {
-          setHistoryData(null);
-          setHistoryStatus("error");
-          setHistoryError(error instanceof Error ? error.message : "株価履歴を取得できませんでした。");
-        }
-      }
-    }
-    loadHistory();
-    return () => {
-      cancelled = true;
-    };
-  }, [normalizedTicker]);
 
   useEffect(() => {
     const sections = decisionNavItems
@@ -160,6 +118,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
 
   return (
     <div className="min-w-0 space-y-5">
+      <LiveWatchlistStrip />
       <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/25 ring-1 ring-white/5 sm:p-6">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div className="min-w-0">
@@ -168,9 +127,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
             <p className="mt-2 text-sm text-slate-400">{stock.companyName} / {stock.exchange}</p>
           </div>
           <div className="grid min-w-0 gap-2 text-left sm:grid-cols-2 sm:text-right lg:grid-cols-1">
-            <div className={latest.changePercent >= 0 ? "text-sky-300" : "text-red-300"}>
+            <div className={displayChangePercent >= 0 ? "text-sky-300" : "text-red-300"}>
               <p className="text-3xl font-black">{latestPriceText}</p>
-              <p className="text-sm font-bold">{latest.changePercent >= 0 ? "+" : ""}{latest.changePercent.toFixed(2)}%</p>
+              <p className="text-sm font-bold">{displayChangePercent >= 0 ? "+" : ""}{displayChangePercent.toFixed(2)}%</p>
             </div>
             <div className="break-words rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
               Source: {sourceLabel}

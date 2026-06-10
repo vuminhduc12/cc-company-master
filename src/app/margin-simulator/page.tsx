@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
@@ -201,6 +202,7 @@ export default function MarginSimulatorPage() {
 
   return (
     <div className="space-y-5">
+      <LiveWatchlistStrip />
       <section className="rounded-3xl border border-white/10 bg-slate-900/82 p-5 shadow-2xl shadow-black/30 ring-1 ring-white/5 sm:p-6">
         <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="min-w-0">

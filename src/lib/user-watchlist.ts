@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { pricesByTicker, watchlist } from "@/lib/mock-data";
 import { createBrowserSupabase } from "@/lib/supabase";
 import type { DailyPrice, Stock, WatchStatus, WatchlistItem } from "@/types";
+
+export { useUserWatchlist, WatchlistProvider } from "@/lib/watchlist-context";
 
 export type SearchMarket = "us" | "jp";
 
@@ -17,122 +18,6 @@ export type CustomWatchItem = WatchlistItem & {
 
 export const customWatchlistStorageKey = "dfinance.customWatchlist.v1";
 export const removedWatchlistStorageKey = "dfinance.removedWatchlistTickers.v1";
-
-export function useUserWatchlist() {
-  const [customItems, setCustomItems] = useState<CustomWatchItem[]>([]);
-  const [removedTickers, setRemovedTickers] = useState<string[]>([]);
-  const [syncMode, setSyncMode] = useState<"checking" | "local" | "supabase">("checking");
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const supabase = createBrowserSupabase();
-    if (!supabase) {
-      setCustomItems(loadCustomWatchItems());
-      setRemovedTickers(loadRemovedWatchTickers());
-      setSyncMode("local");
-      setReady(true);
-      return;
-    }
-    const activeSupabase = supabase;
-    let cancelled = false;
-
-    async function loadForUser() {
-      const { data } = await activeSupabase.auth.getUser();
-      const userId = data.user?.id;
-      if (!userId) {
-        if (!cancelled) {
-          setCustomItems(loadCustomWatchItems());
-          setRemovedTickers(loadRemovedWatchTickers());
-          setSyncMode("local");
-          setReady(true);
-        }
-        return;
-      }
-      if (cancelled) return;
-      const localCustomItems = loadCustomWatchItems();
-      const localRemovedTickers = loadRemovedWatchTickers();
-      const dbState = await loadDbWatchlistState(userId);
-      if (cancelled) return;
-      if (!dbState) {
-        setCustomItems(localCustomItems);
-        setRemovedTickers(localRemovedTickers);
-        setSyncMode("local");
-        setReady(true);
-        return;
-      }
-      if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
-        await migrateLocalWatchlistToDb(userId, localCustomItems, localRemovedTickers);
-        if (cancelled) return;
-        setCustomItems(localCustomItems);
-        setRemovedTickers(localRemovedTickers);
-        setSyncMode("supabase");
-        setReady(true);
-        return;
-      }
-      setCustomItems(dbState.customItems);
-      setRemovedTickers(dbState.removedTickers);
-      setSyncMode("supabase");
-      setReady(true);
-    }
-
-    void loadForUser();
-    const { data: listener } = activeSupabase.auth.onAuthStateChange((_event, session) => {
-      if (cancelled) return;
-      if (!session?.user) {
-        setSyncMode("local");
-        setCustomItems(loadCustomWatchItems());
-        setRemovedTickers(loadRemovedWatchTickers());
-        setReady(true);
-        return;
-      }
-      void (async () => {
-        setReady(false);
-        setSyncMode("checking");
-        const localCustomItems = loadCustomWatchItems();
-        const localRemovedTickers = loadRemovedWatchTickers();
-        const dbState = await loadDbWatchlistState(session.user.id);
-        if (cancelled) return;
-        if (!dbState) {
-          setCustomItems(localCustomItems);
-          setRemovedTickers(localRemovedTickers);
-          setSyncMode("local");
-          setReady(true);
-          return;
-        }
-        if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
-          await migrateLocalWatchlistToDb(session.user.id, localCustomItems, localRemovedTickers);
-          if (cancelled) return;
-          setCustomItems(localCustomItems);
-          setRemovedTickers(localRemovedTickers);
-          setSyncMode("supabase");
-          setReady(true);
-          return;
-        }
-        setCustomItems(dbState.customItems);
-        setRemovedTickers(dbState.removedTickers);
-        setSyncMode("supabase");
-        setReady(true);
-      })();
-    });
-    return () => {
-      cancelled = true;
-      listener.subscription.unsubscribe();
-    };
-  }, []);
-
-  const items = useMemo(() => {
-    const map = new Map<string, WatchlistItem>();
-    watchlist.forEach((item) => {
-      if (!removedTickers.includes(item.stock.ticker)) map.set(item.stock.ticker, item);
-    });
-    customItems.forEach((item) => {
-      if (!removedTickers.includes(item.stock.ticker)) map.set(item.stock.ticker, item);
-    });
-    return [...map.values()].sort((a, b) => a.stock.ticker.localeCompare(b.stock.ticker));
-  }, [customItems, removedTickers]);
-
-  return { items, customItems, removedTickers, ready, syncMode };
-}
 
 export function loadCustomWatchItems() {
   if (typeof window === "undefined") return [];

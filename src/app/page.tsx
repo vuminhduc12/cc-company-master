@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
+import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { DataTable } from "@/components/DataTable";
 import { FinanceDashboardChart, type IntradayPoint } from "@/components/FinanceDashboardChart";
 import { NewsCard } from "@/components/NewsCard";
@@ -98,7 +99,7 @@ export default function DashboardPage() {
   const scoreAnalysis = analyzeStock(latest, liveNews);
   const score = selectedLive?.aiMarketScore ?? (selectedItem.stock.ticker === "RGTI" && jobResult ? jobResult.aiMarketScore : scoreAnalysis.score);
   const status = selectedLive?.status ?? statusFromScore(score);
-  const liveStatuses = dashboardWatchlist.map((item) => jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker)?.status ?? item.status);
+  const liveStatuses = dashboardWatchlist.map((item) => item.status);
   const bullish = liveStatuses.filter((itemStatus) => itemStatus === "Strong Buy" || itemStatus === "Buy").length;
   const caution = liveStatuses.filter((itemStatus) => itemStatus === "Caution").length;
   const danger = liveStatuses.filter((itemStatus) => itemStatus === "Sell").length;
@@ -188,16 +189,13 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 sm:space-y-7">
+      <LiveWatchlistStrip />
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 text-slate-950 shadow-2xl shadow-black/20">
         <div className="border-b border-slate-200 bg-white px-3 py-3 sm:px-5">
           <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
             {dashboardWatchlist.map((item) => {
-              const rowLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker);
-              const rowBasePrices = pricesByTicker[item.stock.ticker];
-              const rowResolved = rowBasePrices ? resolvePriceSeries(rowBasePrices, rowLive?.prices, rowLive?.price) : null;
-              const rowLatest = rowResolved?.prices[rowResolved.prices.length - 1];
-              const currentPrice = rowLatest?.close ?? rowLive?.price.close ?? item.currentPrice;
-              const previousClose = rowResolved?.prices[rowResolved.prices.length - 2]?.close ?? item.previousClose;
+              const currentPrice = item.currentPrice;
+              const previousClose = item.previousClose;
               const change = previousClose > 0 ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
               return (
                 <MarketChip
@@ -396,14 +394,10 @@ export default function DashboardPage() {
           <SectionTitle title="Watchlist" note="銘柄をクリックすると中央の分析が切り替わります" />
           <div className="space-y-2">
             {dashboardWatchlist.map((item) => {
-              const live = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker);
-              const rowBasePrices = pricesByTicker[item.stock.ticker];
-              const rowResolved = rowBasePrices ? resolvePriceSeries(rowBasePrices, live?.prices, live?.price) : null;
-              const rowLatest = rowResolved?.prices[rowResolved.prices.length - 1];
-              const currentPrice = rowLatest?.close ?? live?.price.close ?? item.currentPrice;
-              const previousClose = rowResolved?.prices[rowResolved.prices.length - 2]?.close ?? (live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose);
+              const currentPrice = item.currentPrice;
+              const previousClose = item.previousClose;
               const change = previousClose > 0 ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
-              const rowStatus = live?.status ?? item.status;
+              const rowStatus = item.status;
               const active = item.stock.ticker === selectedItem.stock.ticker;
               return (
                 <button

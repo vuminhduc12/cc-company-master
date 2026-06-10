@@ -1,38 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { authHeaders } from "@/lib/auth-fetch";
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
-import { resolvePriceSeries } from "@/lib/indicators";
-import { pricesByTicker, watchlist } from "@/lib/mock-data";
-import { statusFromScore } from "@/lib/scoring";
+import { watchlist } from "@/lib/mock-data";
 import {
-  applyWatchlistRefresh,
-  mergeRefreshedCustomItems,
-  needsRealtimeRefresh,
-  refreshWatchlistBatch,
-  type WatchlistRefreshResult
-} from "@/lib/watchlist-refresh";
-import {
-  customWatchlistStorageKey,
   isJapaneseTicker,
-  loadCustomWatchItems,
-  loadDbWatchlistState,
-  loadRemovedWatchTickers,
   markDbWatchTickerRemoved,
-  migrateLocalWatchlistToDb,
   normalizeTickerForMarket,
-  removedWatchlistStorageKey,
   restoreDbRemovedDefaults,
   saveDbWatchItem,
-  saveDbWatchItems,
+  useUserWatchlist,
   type CustomWatchItem,
   type SearchMarket
 } from "@/lib/user-watchlist";
-import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import type { DailyPrice, Stock, WatchStatus } from "@/types";
 import { planDefinitions, type PlanDefinition } from "@/lib/plans";
@@ -51,137 +35,25 @@ type WatchlistLookupResult = {
 };
 
 export default function WatchlistPage() {
-  const jobResult = useAiJobResult();
   const auth = useSupabaseAuth();
+  const {
+    items: visibleItems,
+    customItems,
+    removedTickers,
+    syncMode,
+    refreshStatus,
+    refreshMessage,
+    setCustomItems,
+    setRemovedTickers,
+    refreshAll
+  } = useUserWatchlist();
   const [market, setMarket] = useState<SearchMarket>("us");
   const [ticker, setTicker] = useState("RGTI");
-  const [customItems, setCustomItems] = useState<CustomWatchItem[]>([]);
-  const [removedTickers, setRemovedTickers] = useState<string[]>([]);
   const [lookupResult, setLookupResult] = useState<WatchlistLookupResult | null>(null);
   const [searchStatus, setSearchStatus] = useState<"idle" | "running" | "error">("idle");
-  const [refreshStatus, setRefreshStatus] = useState<"idle" | "running" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [storageReady, setStorageReady] = useState(false);
-  const [syncMode, setSyncMode] = useState<"checking" | "local" | "supabase">("checking");
   const [plan, setPlan] = useState<PlanDefinition>(planDefinitions.free);
   const defaultTickerSet = useMemo(() => new Set(watchlist.map((item) => item.stock.ticker)), []);
-  const autoRefreshStarted = useRef(false);
-
-  const applyRefreshResults = useCallback((items: CustomWatchItem[], results: WatchlistRefreshResult[]) => {
-    const resultMap = new Map<string, WatchlistRefreshResult>();
-    results.forEach((row) => resultMap.set(row.ticker, row));
-
-    const refreshed = items.flatMap((item) => {
-      const result = resultMap.get(item.stock.ticker);
-      if (!result || result.ok === false) return [];
-      return [applyWatchlistRefresh(item, result)];
-    });
-
-    if (refreshed.length === 0) return { refreshed: [], successCount: 0, failureCount: results.length };
-
-    setCustomItems((current) => mergeRefreshedCustomItems(current, refreshed));
-    const userId = auth.user?.id;
-    if (userId) void saveDbWatchItems(userId, refreshed);
-
-    const successCount = refreshed.length;
-    const failureCount = results.length - successCount;
-    return { refreshed, successCount, failureCount };
-  }, [auth.user?.id]);
-
-  const refreshItems = useCallback(async (items: CustomWatchItem[], mode: "auto" | "manual") => {
-    if (items.length === 0) return { successCount: 0, failureCount: 0 };
-    setRefreshStatus("running");
-    if (mode === "manual") setMessage("");
-
-    try {
-      const payload = await refreshWatchlistBatch(items.map((item) => ({
-        ticker: item.stock.ticker,
-        market: item.market
-      })));
-      const { successCount, failureCount } = applyRefreshResults(items, payload.results);
-      setRefreshStatus(failureCount > 0 && successCount === 0 ? "error" : "idle");
-
-      if (mode === "manual") {
-        setMessage(failureCount > 0
-          ? `${successCount}銘柄をリアルデータで更新しました。${failureCount}銘柄は失敗しました。`
-          : `${successCount}銘柄をリアルデータで更新しました。`);
-      } else if (successCount > 0) {
-        setMessage(`${successCount}銘柄をリアルデータで自動更新しました。`);
-      }
-
-      return { successCount, failureCount };
-    } catch (error) {
-      setRefreshStatus("error");
-      if (mode === "manual") {
-        setMessage(error instanceof Error ? error.message : "更新に失敗しました。");
-      }
-      return { successCount: 0, failureCount: items.length };
-    }
-  }, [applyRefreshResults]);
-
-  useEffect(() => {
-    if (auth.loading) return;
-    if (auth.user?.id) return;
-    setCustomItems(loadCustomWatchItems());
-    setRemovedTickers(loadRemovedWatchTickers());
-    setSyncMode("local");
-    setStorageReady(true);
-  }, [auth.loading, auth.user?.id]);
-
-  useEffect(() => {
-    if (!storageReady || syncMode !== "local") return;
-    localStorage.setItem(customWatchlistStorageKey, JSON.stringify(customItems));
-  }, [customItems, storageReady, syncMode]);
-
-  useEffect(() => {
-    if (!storageReady || syncMode !== "local") return;
-    localStorage.setItem(removedWatchlistStorageKey, JSON.stringify(removedTickers));
-  }, [removedTickers, storageReady, syncMode]);
-
-  useEffect(() => {
-    if (auth.loading) return;
-    const userId = auth.user?.id;
-    if (!userId) {
-      setSyncMode("local");
-      setStorageReady(true);
-      return;
-    }
-    let cancelled = false;
-    async function loadDbState(activeUserId: string) {
-      setSyncMode("checking");
-      const localCustom = loadCustomWatchItems();
-      const localRemoved = loadRemovedWatchTickers();
-      const dbState = await loadDbWatchlistState(activeUserId);
-      if (cancelled) return;
-      if (!dbState) {
-        setCustomItems(localCustom);
-        setRemovedTickers(localRemoved);
-        setSyncMode("local");
-        setStorageReady(true);
-        setMessage("Supabase Watchlistを読み込めなかったため、localStorageで表示しています。SQL/RLS設定を確認してください。");
-        return;
-      }
-      if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustom.length || localRemoved.length)) {
-        await migrateLocalWatchlistToDb(activeUserId, localCustom, localRemoved);
-        if (!cancelled) {
-          setCustomItems(localCustom);
-          setRemovedTickers(localRemoved);
-          setSyncMode("supabase");
-          setStorageReady(true);
-          setMessage("ローカルWatchlistをSupabaseへ移行しました。");
-        }
-        return;
-      }
-      setCustomItems(dbState.customItems);
-      setRemovedTickers(dbState.removedTickers);
-      setSyncMode("supabase");
-      setStorageReady(true);
-    }
-    void loadDbState(userId);
-    return () => {
-      cancelled = true;
-    };
-  }, [auth.loading, auth.user?.id]);
 
   useEffect(() => {
     async function loadPlan() {
@@ -199,45 +71,9 @@ export default function WatchlistPage() {
     void loadPlan();
   }, [auth.user]);
 
-  const defaultItems = useMemo(() => {
-    return watchlist.filter((item) => !removedTickers.includes(item.stock.ticker)).map<CustomWatchItem>((item) => {
-      const live = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === item.stock.ticker);
-      const rowBasePrices = pricesByTicker[item.stock.ticker];
-      const rowResolved = rowBasePrices ? resolvePriceSeries(rowBasePrices, live?.prices, live?.price) : null;
-      const rowLatest = rowResolved?.prices.at(-1);
-      const currentPrice = rowLatest?.close ?? live?.price.close ?? item.currentPrice;
-      const previousClose = rowResolved?.prices.at(-2)?.close ?? (live ? currentPrice / (1 + live.price.changePercent / 100) : item.previousClose);
-      return {
-        stock: item.stock,
-        shares: item.shares,
-        averagePrice: item.averagePrice,
-        currentPrice,
-        previousClose,
-        status: live?.status ?? (jobResult && item.stock.ticker === "RGTI" ? statusFromScore(jobResult.aiMarketScore) : item.status),
-        memo: live ? `Data Freshness: ${live.dataFreshness}` : item.memo,
-        market: isJapaneseTicker(item.stock.ticker) ? "jp" : "us",
-        score: live?.aiMarketScore ?? (item.stock.ticker === "RGTI" && jobResult ? jobResult.aiMarketScore : undefined),
-        source: live ? "AI Job" : "Local default",
-        fetchedAt: live?.dataFreshness,
-      };
-    });
-  }, [jobResult, removedTickers]);
-
-  const visibleItems = useMemo(() => {
-    const map = new Map<string, CustomWatchItem>();
-    [...defaultItems, ...customItems].forEach((item) => {
-      if (!removedTickers.includes(item.stock.ticker)) map.set(item.stock.ticker, item);
-    });
-    return [...map.values()].sort((a, b) => a.stock.ticker.localeCompare(b.stock.ticker));
-  }, [customItems, defaultItems, removedTickers]);
-
   useEffect(() => {
-    if (!storageReady || autoRefreshStarted.current || visibleItems.length === 0) return;
-    autoRefreshStarted.current = true;
-    const staleItems = visibleItems.filter(needsRealtimeRefresh);
-    if (staleItems.length === 0) return;
-    void refreshItems(staleItems, "auto");
-  }, [storageReady, visibleItems, refreshItems]);
+    if (refreshMessage) setMessage(refreshMessage);
+  }, [refreshMessage]);
 
   async function searchTicker() {
     const normalized = normalizeTickerForMarket(ticker, market);
@@ -299,11 +135,6 @@ export default function WatchlistPage() {
     setMessage(`初期Watchlist銘柄を復元しました。${auth.user ? " Supabaseにも反映しました。" : ""}`);
   }
 
-  async function refreshAll() {
-    if (visibleItems.length === 0) return;
-    await refreshItems(visibleItems, "manual");
-  }
-
   return (
     <div className="space-y-5">
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-xl shadow-black/25 ring-1 ring-white/5">
@@ -312,17 +143,13 @@ export default function WatchlistPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Portfolio Monitor</p>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">Watchlist</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
-              米国株・国内株を検索して、リアル株価を取得した銘柄をWatchlistに追加できます。削除した銘柄と追加銘柄はブラウザに保存されます。
+              米国株・国内株を検索して、リアル株価を取得した銘柄をWatchlistに追加できます。全ページで共有され、15分ごとに自動更新されます。
             </p>
             <p className="mt-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2 text-xs leading-5 text-emerald-100">
               データ取得優先順位: <span className="font-black">{stockDataProviderPriorityLabel}</span>
             </p>
             <p className="mt-2 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-2 text-xs leading-5 text-cyan-100">
               保存モード: <span className="font-black">{syncMode === "checking" ? "同期確認中" : syncMode === "supabase" ? `Supabase DB同期 (${auth.email})` : "localStorage"}</span>
-              <span className="text-cyan-100/75">。ログインすると別端末でもWatchlistを復元できます。</span>
-            </p>
-            <p className="mt-2 rounded-xl border border-fuchsia-300/20 bg-fuchsia-300/[0.06] px-3 py-2 text-xs leading-5 text-fuchsia-100">
-              現在プラン: <span className="font-black">{plan.name}</span>（課金機能は未導入・制限緩和中）
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <WatchStat label="表示銘柄" value={`${visibleItems.length}`} tone="default" />
@@ -421,21 +248,21 @@ export default function WatchlistPage() {
           {message}
         </div>
       ) : null}
-      {jobResult?.error ? (
-        <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
-          Error: {jobResult.error}
+
+      {syncMode === "checking" ? (
+        <div className="rounded-2xl border border-cyan-300/25 bg-cyan-300/10 p-5 text-sm leading-6 text-cyan-100">
+          Watchlistの保存先（Supabase）を確認中です。銘柄データはそのまま表示・更新できます。
         </div>
       ) : null}
-
-      {!storageReady ? (
-        <div className="rounded-2xl border border-cyan-300/25 bg-cyan-300/10 p-5 text-sm leading-6 text-cyan-100">
-          Watchlistの保存元を確認中です。下の初期銘柄はそのまま表示しています。
+      {refreshStatus === "running" ? (
+        <div className="rounded-2xl border border-sky-300/25 bg-sky-300/10 p-5 text-sm leading-6 text-sky-100">
+          表示中の銘柄をリアルデータで更新しています…
         </div>
       ) : null}
 
       <DataTable
-          headers={["Ticker", "会社名", "市場", "現在値", "前日比", "スコア", "ステータス", "ソース", "メモ", "操作"]}
-          rows={visibleItems.map((item) => {
+        headers={["Ticker", "会社名", "市場", "現在値", "前日比", "スコア", "ステータス", "ソース", "メモ", "操作"]}
+        rows={visibleItems.map((item) => {
           const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
           return [
             <Link key="ticker" className="font-bold text-sky-300 hover:text-sky-200" href={`/stocks/${item.stock.ticker}`}>
@@ -457,8 +284,8 @@ export default function WatchlistPage() {
               削除
             </button>
           ];
-          })}
-        />
+        })}
+      />
     </div>
   );
 }
