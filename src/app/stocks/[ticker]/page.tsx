@@ -8,7 +8,7 @@ import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
 import { StockChart } from "@/components/StockChart";
-import { resolvePriceSeries } from "@/lib/indicators";
+import { mergeRealtimeDailyPrice, resolvePriceSeries } from "@/lib/indicators";
 import { analyzePatternSimilarity, type PatternHorizon } from "@/lib/pattern-similarity";
 import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
@@ -46,11 +46,15 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const stock = watchItem?.stock ?? activeHistoryData?.stock ?? buildFallbackStock(normalizedTicker);
   const localPrices = getPricesForTicker(stock.ticker);
   const live = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === stock.ticker);
-  const livePrice = live?.price ?? (stock.ticker === "RGTI" ? jobResult?.price : null) ?? activeHistoryData?.price ?? null;
+  const livePrice = live?.price
+    ?? (stock.ticker === "RGTI" ? jobResult?.price : null)
+    ?? activeHistoryData?.price
+    ?? customWatchItem?.latestPrice
+    ?? null;
   const cachedHistory = userWatchlist.getTickerHistory(stock.ticker);
   const basePrices = activeHistoryData?.prices ?? cachedHistory?.prices ?? customWatchItem?.priceHistory ?? localPrices ?? live?.prices ?? (watchItem ? [latestPriceFromWatchItem(watchItem)] : []);
   const resolvedPrices = basePrices.length ? resolvePriceSeries(basePrices, live?.prices ?? activeHistoryData?.prices, livePrice) : null;
-  const mergedPrices = resolvedPrices?.prices ?? emptyDailyPrices;
+  const mergedPrices = mergeRealtimeDailyPrice(resolvedPrices?.prices ?? emptyDailyPrices, realtimeQuote);
   const latest = mergedPrices.at(-1);
   const displayClose = realtimeQuote?.regular.price ?? latest?.close;
   const displayChangePercent = realtimeQuote?.regular.changePercent ?? latest?.changePercent ?? 0;

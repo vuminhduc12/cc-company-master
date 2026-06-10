@@ -13,7 +13,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { StockChart } from "@/components/StockChart";
 import { resolveAiJobAudit } from "@/lib/ai-job-audit";
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
-import { latestPrice, resolvePriceSeries, volumeRatio } from "@/lib/indicators";
+import { latestPrice, mergeRealtimeDailyPrice, resolvePriceSeries, volumeRatio } from "@/lib/indicators";
 import { aiTasks, news, prices, pricesByTicker, report, watchlist } from "@/lib/mock-data";
 import { analyzeStock, statusFromScore } from "@/lib/scoring";
 import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
@@ -88,9 +88,14 @@ export default function DashboardPage() {
   const selectedLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === selectedItem.stock.ticker);
   const cachedHistory = userWatchlist.getTickerHistory(selectedItem.stock.ticker);
   const selectedBasePrices = activeHistoryData?.prices ?? cachedHistory?.prices ?? pricesByTicker[selectedItem.stock.ticker] ?? selectedLive?.prices ?? [latestPriceFromWatchItem(selectedItem)];
-  const selectedLivePrice = selectedLive?.price ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null) ?? activeHistoryData?.price ?? null;
+  const selectedCustomItem = userWatchlist.items.find((item) => item.stock.ticker === selectedItem.stock.ticker);
+  const selectedLivePrice = selectedLive?.price
+    ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null)
+    ?? activeHistoryData?.price
+    ?? selectedCustomItem?.latestPrice
+    ?? null;
   const resolvedPrices = resolvePriceSeries(selectedBasePrices, selectedLive?.prices ?? activeHistoryData?.prices, selectedLivePrice);
-  const chartPrices = resolvedPrices.prices;
+  const chartPrices = mergeRealtimeDailyPrice(resolvedPrices.prices, realtimeQuote);
   const latest = chartPrices[chartPrices.length - 1] ?? baseLatest;
   const selectedNews = selectedLive?.news?.length
     ? selectedLive.news
