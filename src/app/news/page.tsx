@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { NewsCard } from "@/components/NewsCard";
-import { news, watchlist } from "@/lib/mock-data";
+import { news } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
+import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { hiddenNewsStorageKey, hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
 import type { NewsItem, WatchlistItem } from "@/types";
@@ -12,7 +13,7 @@ import type { NewsItem, WatchlistItem } from "@/types";
 export default function NewsPage() {
   const jobResult = useAiJobResult();
   const userWatchlist = useUserWatchlist();
-  const visibleWatchlist = userWatchlist.ready ? userWatchlist.items : watchlist;
+  const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
   const allVisibleItems = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
   const staleCount = countStaleNews(allVisibleItems);

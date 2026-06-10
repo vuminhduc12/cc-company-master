@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
-import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
+import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { DataTable } from "@/components/DataTable";
 import { FinanceDashboardChart, type IntradayPoint } from "@/components/FinanceDashboardChart";
 import { NewsCard } from "@/components/NewsCard";
@@ -81,7 +81,7 @@ export default function DashboardPage() {
   const jobResult = useAiJobResult();
   const executionAudit = resolveAiJobAudit(jobResult);
   const userWatchlist = useUserWatchlist();
-  const dashboardWatchlist = userWatchlist.ready ? userWatchlist.items : watchlist;
+  const dashboardWatchlist = resolveVisibleWatchlist(userWatchlist.items);
   const baseLatest = latestPrice(prices);
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
   const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
@@ -200,20 +200,17 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 sm:space-y-7">
-      <LiveWatchlistStrip />
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 text-slate-950 shadow-2xl shadow-black/20">
         <div className="border-b border-slate-200 bg-white px-3 py-3 sm:px-5">
           <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
             {dashboardWatchlist.map((item) => {
-              const currentPrice = item.currentPrice;
-              const previousClose = item.previousClose;
-              const change = previousClose > 0 ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
+              const quote = quoteForWatchItem(item, { selectedTicker, realtimeQuote });
               return (
                 <MarketChip
                   key={item.stock.ticker}
                   ticker={item.stock.ticker}
-                  price={currentPrice}
-                  change={change}
+                  price={quote.price}
+                  change={quote.changePercent}
                   currency={currencyForTicker(item.stock.ticker)}
                   active={item.stock.ticker === selectedItem.stock.ticker}
                   onClick={() => setSelectedTicker(item.stock.ticker)}
@@ -405,9 +402,7 @@ export default function DashboardPage() {
           <SectionTitle title="Watchlist" note="銘柄をクリックすると中央の分析が切り替わります" />
           <div className="space-y-2">
             {dashboardWatchlist.map((item) => {
-              const currentPrice = item.currentPrice;
-              const previousClose = item.previousClose;
-              const change = previousClose > 0 ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
+              const quote = quoteForWatchItem(item, { selectedTicker, realtimeQuote });
               const rowStatus = item.status;
               const active = item.stock.ticker === selectedItem.stock.ticker;
               return (
@@ -425,9 +420,9 @@ export default function DashboardPage() {
                     <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">{shortCompanyName(item.stock.companyName)}</span>
                   </span>
                   <span className="text-right tabular-nums">
-                    <span className="block text-sm font-black text-slate-100">{currentPrice ? formatMoney(currentPrice, currencyForTicker(item.stock.ticker)) : "-"}</span>
-                    <span className={change >= 0 ? "mt-0.5 block text-xs font-bold text-green-300" : "mt-0.5 block text-xs font-bold text-red-300"}>
-                      {change ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}
+                    <span className="block text-sm font-black text-slate-100">{quote.price ? formatMoney(quote.price, currencyForTicker(item.stock.ticker)) : "-"}</span>
+                    <span className={quote.changePercent >= 0 ? "mt-0.5 block text-xs font-bold text-green-300" : "mt-0.5 block text-xs font-bold text-red-300"}>
+                      {quote.price ? `${quote.changePercent >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%` : "-"}
                     </span>
                   </span>
                   <WatchStatusPill value={rowStatus} />
@@ -590,7 +585,7 @@ function MarketChip({
   onClick
 }: {
   ticker: string;
-  price: number;
+  price: number | null;
   change: number;
   currency: string;
   active: boolean;
@@ -608,7 +603,7 @@ function MarketChip({
       </span>
       <span className="min-w-0">
         <span className="block text-sm font-bold text-slate-950">{ticker}</span>
-        <span className="block truncate text-xs text-slate-500">{formatMoney(price, currency)} / <span className={change >= 0 ? "text-green-700" : "text-red-700"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></span>
+        <span className="block truncate text-xs text-slate-500">{price ? formatMoney(price, currency) : "-"} / <span className={change >= 0 ? "text-green-700" : "text-red-700"}>{price ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span></span>
       </span>
     </button>
   );

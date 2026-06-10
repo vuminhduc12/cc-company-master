@@ -14,6 +14,7 @@ import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-dat
 import { analyzeStock } from "@/lib/scoring";
 import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import type { DailyPrice, Stock, WatchlistItem } from "@/types";
@@ -69,7 +70,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     : live
       ? resolvedPrices?.source ?? "AI Job"
       : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
-  const detailItems = userWatchlist.ready ? userWatchlist.items : watchlist;
+  const detailItems = resolveVisibleWatchlist(userWatchlist.items);
   const isWatchlistFallbackOnly = Boolean(watchItem && !localPrices && !activeHistoryData?.prices?.length && !live?.prices?.length);
   const chartPrices = mergedPrices;
   const tablePrices = mergedPrices.slice().reverse();

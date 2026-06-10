@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useUserWatchlist } from "@/lib/watchlist-context";
 import { isJapaneseTicker } from "@/lib/watchlist-storage";
+import { quoteFromWatchItem } from "@/lib/watchlist-display";
 
 export function LiveWatchlistStrip() {
   const watchlistState = useUserWatchlist();
@@ -30,7 +31,7 @@ export function LiveWatchlistStrip() {
       </div>
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
         {items.map((item) => {
-          const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
+          const quote = quoteFromWatchItem(item);
           return (
             <Link
               key={item.stock.ticker}
@@ -38,9 +39,9 @@ export function LiveWatchlistStrip() {
               href={`/stocks/${item.stock.ticker}`}
             >
               <p className="text-xs font-black text-sky-100">{item.stock.ticker}</p>
-              <p className="mt-1 text-sm font-bold text-slate-50">{formatPrice(item.stock.ticker, item.currentPrice)}</p>
-              <p className={`mt-0.5 text-xs font-semibold ${change >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {change ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}
+              <p className="mt-1 text-sm font-bold text-slate-50">{formatPrice(item.stock.ticker, quote.price)}</p>
+              <p className={`mt-0.5 text-xs font-semibold ${quote.changePercent >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {quote.price ? `${quote.changePercent >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%` : "-"}
               </p>
               <p className="mt-1 truncate text-[10px] text-slate-500">{item.source ?? "live"}</p>
             </Link>
@@ -51,8 +52,8 @@ export function LiveWatchlistStrip() {
   );
 }
 
-function formatPrice(ticker: string, value: number) {
-  if (!Number.isFinite(value)) return "-";
+function formatPrice(ticker: string, value: number | null) {
+  if (value === null || !Number.isFinite(value) || value <= 0) return "-";
   if (isJapaneseTicker(ticker)) return `${Math.round(value).toLocaleString("ja-JP")}円`;
   return `$${value.toFixed(2)}`;
 }
