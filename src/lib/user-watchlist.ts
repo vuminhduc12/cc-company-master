@@ -245,6 +245,11 @@ export async function saveDbWatchItem(userId: string, item: CustomWatchItem) {
   }, { onConflict: "user_id,ticker" });
 }
 
+export async function saveDbWatchItems(userId: string, items: CustomWatchItem[]) {
+  if (items.length === 0) return;
+  await Promise.all(items.map((item) => saveDbWatchItem(userId, item)));
+}
+
 export async function markDbWatchTickerRemoved(userId: string, ticker: string, market: SearchMarket = "us") {
   const supabase = createBrowserSupabase();
   if (!supabase) return;
