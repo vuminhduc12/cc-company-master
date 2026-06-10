@@ -21,7 +21,7 @@ import {
   removedWatchlistStorageKey,
   saveDbWatchItems,
   type CustomWatchItem
-} from "@/lib/user-watchlist";
+} from "@/lib/watchlist-storage";
 type RefreshStatus = "idle" | "running" | "error";
 
 type WatchlistContextValue = {
@@ -173,7 +173,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
-      listener.subscription.unsubscribe();
+      listener?.subscription?.unsubscribe();
     };
   }, []);
 

@@ -1,8 +1,8 @@
 import { resolvePriceSeries } from "@/lib/indicators";
 import { pricesByTicker, watchlist } from "@/lib/mock-data";
 import { statusFromScore } from "@/lib/scoring";
-import type { CustomWatchItem, SearchMarket } from "@/lib/user-watchlist";
-import { isJapaneseTicker } from "@/lib/user-watchlist";
+import type { CustomWatchItem, SearchMarket } from "@/lib/watchlist-storage";
+import { isJapaneseTicker } from "@/lib/watchlist-storage";
 import type { WatchlistLookupPayload } from "@/lib/watchlist-lookup";
 import type { AiJobResult } from "@/types";
 

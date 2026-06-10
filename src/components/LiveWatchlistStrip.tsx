@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useUserWatchlist } from "@/lib/watchlist-context";
-import { isJapaneseTicker } from "@/lib/user-watchlist";
+import { isJapaneseTicker } from "@/lib/watchlist-storage";
 
 export function LiveWatchlistStrip() {
   const watchlistState = useUserWatchlist();
