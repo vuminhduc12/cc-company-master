@@ -9,6 +9,7 @@ import {
   refreshWatchlistBatch,
   type WatchlistRefreshResult
 } from "@/lib/watchlist-refresh";
+import { buildTickerHistoryEntry, type TickerHistoryEntry } from "@/lib/stock-history-cache";
 import { createBrowserSupabase } from "@/lib/supabase";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import {
@@ -31,6 +32,8 @@ type WatchlistContextValue = {
   syncMode: "checking" | "local" | "supabase";
   refreshStatus: RefreshStatus;
   refreshMessage: string;
+  historyRevision: number;
+  getTickerHistory: (ticker: string) => TickerHistoryEntry | null;
   setCustomItems: React.Dispatch<React.SetStateAction<CustomWatchItem[]>>;
   setRemovedTickers: React.Dispatch<React.SetStateAction<string[]>>;
   refreshAll: () => Promise<void>;
@@ -46,6 +49,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>("idle");
   const [refreshMessage, setRefreshMessage] = useState("");
+  const [historyByTicker, setHistoryByTicker] = useState<Record<string, TickerHistoryEntry>>({});
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
   const autoRefreshStarted = useRef(false);
 
@@ -197,7 +202,24 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     }
 
     setCustomItems((current) => mergeRefreshedCustomItems(current, refreshed));
-    if (userId) void saveDbWatchItems(userId, refreshed);
+
+    const nextHistory: Record<string, TickerHistoryEntry> = {};
+    results.forEach((row) => {
+      if (row.ok === false) return;
+      const entry = buildTickerHistoryEntry(row);
+      if (entry) nextHistory[entry.stock.ticker] = entry;
+    });
+    if (Object.keys(nextHistory).length > 0) {
+      setHistoryByTicker((current) => ({ ...current, ...nextHistory }));
+      setHistoryRevision((current) => current + 1);
+    }
+
+    if (userId) {
+      void saveDbWatchItems(userId, refreshed.map((item) => {
+        const { priceHistory: _priceHistory, ...persisted } = item;
+        return persisted;
+      }));
+    }
 
     return {
       successCount: refreshed.length,
@@ -257,6 +279,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [ready, customItems, removedTickers, jobResult, refreshItems]);
 
+  const getTickerHistory = useCallback((ticker: string) => historyByTicker[ticker] ?? null, [historyByTicker]);
+
   const value = useMemo<WatchlistContextValue>(() => ({
     items,
     customItems,
@@ -265,10 +289,12 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     syncMode,
     refreshStatus,
     refreshMessage,
+    historyRevision,
+    getTickerHistory,
     setCustomItems,
     setRemovedTickers,
     refreshAll
-  }), [items, customItems, removedTickers, ready, syncMode, refreshStatus, refreshMessage, refreshAll]);
+  }), [items, customItems, removedTickers, ready, syncMode, refreshStatus, refreshMessage, historyRevision, getTickerHistory, refreshAll]);
 
   return <WatchlistContext.Provider value={value}>{children}</WatchlistContext.Provider>;
 }

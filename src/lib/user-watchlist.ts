@@ -14,6 +14,7 @@ export type CustomWatchItem = WatchlistItem & {
   source?: string;
   fetchedAt?: string;
   latestPrice?: DailyPrice;
+  priceHistory?: DailyPrice[];
 };
 
 export const customWatchlistStorageKey = "dfinance.customWatchlist.v1";

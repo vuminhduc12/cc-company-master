@@ -10,6 +10,7 @@ export type WatchlistLookupPayload = {
   mode: "live" | "mock";
   provider: "yahoo" | "alpha_vantage" | "saved" | "local";
   stock: Stock;
+  prices: DailyPrice[];
   price: DailyPrice;
   previousClose: number;
   score: number;
@@ -37,6 +38,7 @@ export async function fetchWatchlistLookup(ticker: string, market: SearchMarket)
     mode: stockData.mode,
     provider: stockData.provider,
     stock,
+    prices: stockData.prices,
     price,
     previousClose: stockData.prices.at(-2)?.close ?? price.close,
     score: analysis.score,

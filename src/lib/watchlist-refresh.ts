@@ -53,7 +53,8 @@ export function applyWatchlistRefresh(base: CustomWatchItem, result: WatchlistLo
     source: result.provider,
     fetchedAt: result.fetchedAt,
     memo: result.warning ?? `${result.provider} / ${result.mode} / ${formatDateTime(result.fetchedAt)}`,
-    latestPrice: result.price
+    latestPrice: result.price,
+    priceHistory: result.prices
   };
 }
 

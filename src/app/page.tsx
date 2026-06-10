@@ -16,6 +16,7 @@ import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { latestPrice, resolvePriceSeries, volumeRatio } from "@/lib/indicators";
 import { aiTasks, news, prices, pricesByTicker, report, watchlist } from "@/lib/mock-data";
 import { analyzeStock, statusFromScore } from "@/lib/scoring";
+import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import type { AiStockExecutionAudit, DailyPrice, NewsItem, Stock, WatchStatus, WatchlistItem } from "@/types";
@@ -85,7 +86,8 @@ export default function DashboardPage() {
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
   const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
   const selectedLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === selectedItem.stock.ticker);
-  const selectedBasePrices = pricesByTicker[selectedItem.stock.ticker] ?? activeHistoryData?.prices ?? selectedLive?.prices ?? [latestPriceFromWatchItem(selectedItem)];
+  const cachedHistory = userWatchlist.getTickerHistory(selectedItem.stock.ticker);
+  const selectedBasePrices = activeHistoryData?.prices ?? cachedHistory?.prices ?? pricesByTicker[selectedItem.stock.ticker] ?? selectedLive?.prices ?? [latestPriceFromWatchItem(selectedItem)];
   const selectedLivePrice = selectedLive?.price ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null) ?? activeHistoryData?.price ?? null;
   const resolvedPrices = resolvePriceSeries(selectedBasePrices, selectedLive?.prices ?? activeHistoryData?.prices, selectedLivePrice);
   const chartPrices = resolvedPrices.prices;
@@ -176,10 +178,14 @@ export default function DashboardPage() {
     }
 
     void loadHistory();
+    const timer = window.setInterval(() => {
+      void loadHistory();
+    }, HISTORY_POLL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [selectedTicker]);
+  }, [selectedTicker, userWatchlist.historyRevision]);
 
   useEffect(() => {
     if (dashboardWatchlist.some((item) => item.stock.ticker === selectedTicker)) return;

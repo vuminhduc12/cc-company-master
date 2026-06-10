@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
+import type { TickerHistoryEntry } from "@/lib/stock-history-cache";
 import type { DailyPrice, NewsItem, Stock, WatchStatus } from "@/types";
 
 type RealtimeQuote = {
@@ -33,8 +35,44 @@ export type StockHistoryResult = {
   fetchedAt: string;
 };
 
-export function useStockLiveData(ticker: string, options?: { pollRealtimeMs?: number }) {
+function historyResultFromEntry(entry: TickerHistoryEntry): StockHistoryResult {
+  return {
+    ok: true,
+    stock: entry.stock,
+    prices: entry.prices,
+    price: entry.price,
+    news: [],
+    score: 0,
+    status: "Watch",
+    mode: entry.mode,
+    provider: entry.provider,
+    sourceLabel: entry.sourceLabel,
+    fetchedAt: entry.fetchedAt
+  };
+}
+
+async function fetchStockHistory(ticker: string): Promise<StockHistoryResult> {
+  const response = await fetch(`/api/stocks/${encodeURIComponent(ticker)}/history`, { cache: "no-store" });
+  const payload = await response.json() as StockHistoryResult | { ok: false; error?: string };
+  if (!response.ok || !payload.ok) {
+    throw new Error("error" in payload ? payload.error ?? "株価履歴を取得できませんでした。" : "株価履歴を取得できませんでした。");
+  }
+  return payload;
+}
+
+export function useStockLiveData(
+  ticker: string,
+  options?: {
+    pollRealtimeMs?: number;
+    pollHistoryMs?: number;
+    historyRevision?: number;
+    seededHistory?: TickerHistoryEntry | null;
+  }
+) {
   const pollRealtimeMs = options?.pollRealtimeMs ?? 60_000;
+  const pollHistoryMs = options?.pollHistoryMs ?? HISTORY_POLL_MS;
+  const historyRevision = options?.historyRevision ?? 0;
+  const seededHistory = options?.seededHistory ?? null;
   const [historyData, setHistoryData] = useState<StockHistoryResult | null>(null);
   const [historyStatus, setHistoryStatus] = useState<"loading" | "done" | "error">("loading");
   const [historyError, setHistoryError] = useState("");
@@ -44,23 +82,31 @@ export function useStockLiveData(ticker: string, options?: { pollRealtimeMs?: nu
   useEffect(() => {
     let cancelled = false;
 
-    async function loadHistory() {
-      setHistoryStatus("loading");
+    async function loadHistory(preferApi: boolean) {
+      if (!preferApi && seededHistory?.stock.ticker === ticker) {
+        if (!cancelled) {
+          setHistoryData(historyResultFromEntry(seededHistory));
+          setHistoryStatus("done");
+          setHistoryError("");
+        }
+        return;
+      }
+
+      setHistoryStatus((current) => current === "done" ? "done" : "loading");
       setHistoryError("");
       try {
-        const response = await fetch(`/api/stocks/${encodeURIComponent(ticker)}/history`, { cache: "no-store" });
-        const payload = await response.json() as StockHistoryResult | { ok: false; error?: string };
+        const payload = await fetchStockHistory(ticker);
         if (cancelled) return;
-        if (!response.ok || !payload.ok) {
-          setHistoryData(null);
-          setHistoryStatus("error");
-          setHistoryError("error" in payload ? payload.error ?? "株価履歴を取得できませんでした。" : "株価履歴を取得できませんでした。");
-          return;
-        }
         setHistoryData(payload);
         setHistoryStatus("done");
       } catch (error) {
         if (!cancelled) {
+          if (seededHistory?.stock.ticker === ticker) {
+            setHistoryData(historyResultFromEntry(seededHistory));
+            setHistoryStatus("done");
+            setHistoryError("");
+            return;
+          }
           setHistoryData(null);
           setHistoryStatus("error");
           setHistoryError(error instanceof Error ? error.message : "株価履歴を取得できませんでした。");
@@ -68,11 +114,16 @@ export function useStockLiveData(ticker: string, options?: { pollRealtimeMs?: nu
       }
     }
 
-    void loadHistory();
+    void loadHistory(false);
+    const timer = window.setInterval(() => {
+      void loadHistory(true);
+    }, pollHistoryMs);
+
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [ticker]);
+  }, [ticker, pollHistoryMs, historyRevision, seededHistory]);
 
   useEffect(() => {
     let cancelled = false;
