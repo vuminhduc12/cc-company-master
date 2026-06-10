@@ -72,7 +72,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const sourceLabel = live
     ? resolvedPrices?.source ?? "AI Job"
     : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
-  const detailItems = userWatchlist.items.length ? userWatchlist.items : watchlist;
+  const detailItems = userWatchlist.ready ? userWatchlist.items : watchlist;
   const isWatchlistFallbackOnly = Boolean(watchItem && !localPrices && !activeHistoryData?.prices?.length && !live?.prices?.length);
   const chartPrices = mergedPrices;
   const tablePrices = mergedPrices.slice().reverse();

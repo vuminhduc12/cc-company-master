@@ -13,10 +13,10 @@ export const planDefinitions: Record<PlanKey, PlanDefinition> = {
   free: {
     key: "free",
     name: "Free",
-    monthlyAiCalls: 10,
-    dailyAiCalls: 10,
-    watchlistItems: 5,
-    description: "検証用。少数銘柄と少ないAI診断で使うプラン。"
+    monthlyAiCalls: 1000,
+    dailyAiCalls: 300,
+    watchlistItems: 100,
+    description: "開発・検証用。課金プラン導入前は制限を緩めて利用できます。"
   },
   pro: {
     key: "pro",

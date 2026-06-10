@@ -11,7 +11,7 @@ import type { NewsItem, WatchlistItem } from "@/types";
 export default function NewsPage() {
   const jobResult = useAiJobResult();
   const userWatchlist = useUserWatchlist();
-  const visibleWatchlist = userWatchlist.items.length ? userWatchlist.items : watchlist;
+  const visibleWatchlist = userWatchlist.ready ? userWatchlist.items : watchlist;
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
   const allVisibleItems = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
   const staleCount = countStaleNews(allVisibleItems);

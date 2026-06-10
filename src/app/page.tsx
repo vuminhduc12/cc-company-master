@@ -79,7 +79,7 @@ export default function DashboardPage() {
   const jobResult = useAiJobResult();
   const executionAudit = resolveAiJobAudit(jobResult);
   const userWatchlist = useUserWatchlist();
-  const dashboardWatchlist = userWatchlist.items.length ? userWatchlist.items : watchlist;
+  const dashboardWatchlist = userWatchlist.ready ? userWatchlist.items : watchlist;
   const baseLatest = latestPrice(prices);
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
   const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
