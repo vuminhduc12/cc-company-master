@@ -36,15 +36,16 @@ export function resolveAiJobAudit(result: AiJobResult | null): AiJobExecutionAud
 }
 
 export function deriveStockAudit(item: StockAnalysisResult): AiStockExecutionAudit {
-  const ruleNewsCount = item.news.filter(isRuleBasedNewsAnalysis).length;
-  const aiNewsCount = Math.max(item.news.length - ruleNewsCount, 0);
+  const news = item.news ?? [];
+  const ruleNewsCount = news.filter(isRuleBasedNewsAnalysis).length;
+  const aiNewsCount = Math.max(news.length - ruleNewsCount, 0);
   return {
     ticker: item.stock.ticker,
     status: item.error ? "Error" : "Completed",
     priceSource: item.price.source || "unknown",
     priceFreshness: item.dataFreshness || item.price.date,
-    newsCount: item.news.length,
-    latestNewsDate: latestDate(item.news.map((newsItem) => newsItem.publishedAt)),
+    newsCount: news.length,
+    latestNewsDate: latestDate(news.map((newsItem) => newsItem.publishedAt)),
     aiNewsCount,
     ruleNewsCount,
     fallbackReason: deriveFallbackReason(item, ruleNewsCount),

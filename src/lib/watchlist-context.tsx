@@ -39,7 +39,22 @@ type WatchlistContextValue = {
   refreshAll: () => Promise<void>;
 };
 
-const WatchlistContext = createContext<WatchlistContextValue | null>(null);
+const defaultWatchlistContext: WatchlistContextValue = {
+  items: [],
+  customItems: [],
+  removedTickers: [],
+  ready: false,
+  syncMode: "checking",
+  refreshStatus: "idle",
+  refreshMessage: "",
+  historyRevision: 0,
+  getTickerHistory: () => null,
+  setCustomItems: () => undefined,
+  setRemovedTickers: () => undefined,
+  refreshAll: async () => undefined
+};
+
+const WatchlistContext = createContext<WatchlistContextValue>(defaultWatchlistContext);
 
 export function WatchlistProvider({ children }: { children: ReactNode }) {
   const jobResult = useAiJobResult();
@@ -215,10 +230,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     }
 
     if (userId) {
-      void saveDbWatchItems(userId, refreshed.map((item) => {
-        const { priceHistory: _priceHistory, ...persisted } = item;
-        return persisted;
-      }));
+      void saveDbWatchItems(userId, refreshed.map(stripPriceHistory));
     }
 
     return {
@@ -300,9 +312,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 }
 
 export function useUserWatchlist() {
-  const context = useContext(WatchlistContext);
-  if (!context) {
-    throw new Error("useUserWatchlist must be used within WatchlistProvider");
-  }
-  return context;
+  return useContext(WatchlistContext);
+}
+
+function stripPriceHistory({ priceHistory, ...persisted }: CustomWatchItem): CustomWatchItem {
+  void priceHistory;
+  return persisted;
 }

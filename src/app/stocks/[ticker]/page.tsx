@@ -16,7 +16,7 @@ import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
-import type { DailyPrice, NewsItem, Stock, WatchlistItem } from "@/types";
+import type { DailyPrice, Stock, WatchlistItem } from "@/types";
 
 const emptyDailyPrices: DailyPrice[] = [];
 const decisionNavItems = [
