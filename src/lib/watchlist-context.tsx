@@ -194,12 +194,16 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!ready || syncMode !== "local") return;
-    localStorage.setItem(customWatchlistStorageKey, JSON.stringify(customItems));
+    saveLocalCustomWatchItems(customItems);
   }, [customItems, ready, syncMode]);
 
   useEffect(() => {
     if (!ready || syncMode !== "local") return;
-    localStorage.setItem(removedWatchlistStorageKey, JSON.stringify(removedTickers));
+    try {
+      localStorage.setItem(removedWatchlistStorageKey, JSON.stringify(removedTickers));
+    } catch (error) {
+      console.warn("Failed to save removed watchlist tickers.", error);
+    }
   }, [removedTickers, ready, syncMode]);
 
   const applyRefreshResults = useCallback((targets: CustomWatchItem[], results: WatchlistRefreshResult[]) => {
@@ -318,4 +322,48 @@ export function useUserWatchlist() {
 function stripPriceHistory({ priceHistory, ...persisted }: CustomWatchItem): CustomWatchItem {
   void priceHistory;
   return persisted;
+}
+
+function saveLocalCustomWatchItems(items: CustomWatchItem[]) {
+  try {
+    localStorage.setItem(customWatchlistStorageKey, JSON.stringify(items.map(stripPriceHistory)));
+    return;
+  } catch (error) {
+    if (!isQuotaExceededError(error)) {
+      console.warn("Failed to save custom watchlist.", error);
+      return;
+    }
+  }
+
+  try {
+    localStorage.setItem(customWatchlistStorageKey, JSON.stringify(items.map(toMinimalPersistedWatchItem)));
+  } catch (error) {
+    console.warn("Failed to save compact custom watchlist.", error);
+  }
+}
+
+function toMinimalPersistedWatchItem(item: CustomWatchItem): CustomWatchItem {
+  return {
+    stock: item.stock,
+    shares: item.shares,
+    averagePrice: item.averagePrice,
+    currentPrice: item.currentPrice,
+    previousClose: item.previousClose,
+    status: item.status,
+    memo: item.memo,
+    market: item.market,
+    score: item.score,
+    source: item.source,
+    fetchedAt: item.fetchedAt,
+    latestPrice: item.latestPrice
+  };
+}
+
+function isQuotaExceededError(error: unknown) {
+  return error instanceof DOMException && (
+    error.name === "QuotaExceededError"
+    || error.name === "NS_ERROR_DOM_QUOTA_REACHED"
+    || error.code === 22
+    || error.code === 1014
+  );
 }
