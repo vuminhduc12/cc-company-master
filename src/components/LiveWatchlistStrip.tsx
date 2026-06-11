@@ -8,9 +8,9 @@ import { quoteFromWatchItem } from "@/lib/watchlist-display";
 export function LiveWatchlistStrip() {
   const watchlistState = useUserWatchlist();
   const { items, ready, syncMode, syncError, refreshStatus, refreshMessage } = watchlistState;
-  const isSyncChecking = !ready || syncMode === "checking";
+  const isSyncChecking = syncMode === "checking";
 
-  if (isSyncChecking) {
+  if (!ready) {
     return <LiveWatchlistSkeleton />;
   }
 
@@ -29,7 +29,7 @@ export function LiveWatchlistStrip() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Live Watchlist</p>
           <p className="mt-1 text-xs text-slate-500">
-            {syncError || (refreshStatus === "running" ? "リアルデータを更新中…" : refreshMessage || "全ページで共有される最新株価です。")}
+            {syncError || (isSyncChecking ? "Supabase DB同期中です。完了後にアカウントのWatchlistへ更新されます。" : refreshStatus === "running" ? "リアルデータを更新中…" : refreshMessage || "全ページで共有される最新株価です。")}
           </p>
         </div>
         <button

@@ -55,6 +55,7 @@ export default function WatchlistPage() {
   const [searchStatus, setSearchStatus] = useState<"idle" | "running" | "error">("idle");
   const [message, setMessage] = useState("");
   const [plan, setPlan] = useState<PlanDefinition>(planDefinitions.free);
+  const authUserId = auth.user?.id ?? "";
   const defaultTickerSet = useMemo(() => new Set(watchlist.map((item) => item.stock.ticker)), []);
   const isSyncChecking = !ready || syncMode === "checking";
 
@@ -72,7 +73,7 @@ export default function WatchlistPage() {
       }
     }
     void loadPlan();
-  }, [auth.user]);
+  }, [authUserId]);
 
   useEffect(() => {
     if (refreshMessage) setMessage(refreshMessage);

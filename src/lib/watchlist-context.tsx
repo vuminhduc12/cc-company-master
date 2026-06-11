@@ -80,8 +80,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   );
 
   const items = useMemo(
-    () => ready && syncMode !== "checking" ? visibleItems : [],
-    [ready, syncMode, visibleItems]
+    () => ready ? visibleItems : [],
+    [ready, visibleItems]
   );
 
   useEffect(() => {
@@ -98,9 +98,18 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
 
+    function applyLocalFallback(message = "") {
+      setCustomItems(loadCustomWatchItems());
+      setRemovedTickers(loadRemovedWatchTickers());
+      setSyncMode("local");
+      setSyncError(message);
+      setReady(true);
+    }
+
     async function loadForUser() {
       if (!supabase) return;
       const requestId = ++syncRequestId.current;
+      applyLocalFallback("");
       try {
         const { data } = await withTimeout(supabase.auth.getUser(), watchlistSyncTimeoutMs, "ログイン状態の確認がタイムアウトしました。");
         if (cancelled || requestId !== syncRequestId.current) return;
@@ -108,22 +117,13 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setUserId(activeUserId);
 
         if (!activeUserId) {
-          if (!cancelled) {
-            setCustomItems(loadCustomWatchItems());
-            setRemovedTickers(loadRemovedWatchTickers());
-            setSyncMode("local");
-            setSyncError("");
-            setReady(true);
-          }
+          if (!cancelled) applyLocalFallback("");
           return;
         }
 
         if (cancelled) return;
         setSyncMode("checking");
         setSyncError("");
-        setReady(false);
-        setCustomItems([]);
-        setRemovedTickers([]);
         const localCustomItems = loadCustomWatchItems();
         const localRemovedTickers = loadRemovedWatchTickers();
         const dbState = await withTimeout(loadDbWatchlistState(activeUserId), watchlistSyncTimeoutMs, "Watchlist DB同期がタイムアウトしました。");
@@ -156,11 +156,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         setReady(true);
       } catch (error) {
         if (cancelled || requestId !== syncRequestId.current) return;
-        setCustomItems(loadCustomWatchItems());
-        setRemovedTickers(loadRemovedWatchTickers());
-        setSyncMode("local");
-        setSyncError(error instanceof Error ? `Supabase DB同期に失敗しました: ${error.message}` : "Supabase DB同期に失敗しました。");
-        setReady(true);
+        applyLocalFallback(error instanceof Error ? `Supabase DB同期に失敗しました: ${error.message}` : "Supabase DB同期に失敗しました。");
       }
     }
 
@@ -173,21 +169,14 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       setUserId(activeUserId);
 
       if (!activeUserId) {
-        setSyncMode("local");
-        setSyncError("");
-        setCustomItems(loadCustomWatchItems());
-        setRemovedTickers(loadRemovedWatchTickers());
-        setReady(true);
+        applyLocalFallback("");
         autoRefreshStarted.current = false;
         return;
       }
 
       void (async () => {
-        setReady(false);
         setSyncMode("checking");
         setSyncError("");
-        setCustomItems([]);
-        setRemovedTickers([]);
         autoRefreshStarted.current = false;
         const localCustomItems = loadCustomWatchItems();
         const localRemovedTickers = loadRemovedWatchTickers();
@@ -222,11 +211,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
           setReady(true);
         } catch (error) {
           if (cancelled || requestId !== syncRequestId.current) return;
-          setCustomItems(localCustomItems);
-          setRemovedTickers(localRemovedTickers);
-          setSyncMode("local");
-          setSyncError(error instanceof Error ? `Supabase DB同期に失敗しました: ${error.message}` : "Supabase DB同期に失敗しました。");
-          setReady(true);
+          applyLocalFallback(error instanceof Error ? `Supabase DB同期に失敗しました: ${error.message}` : "Supabase DB同期に失敗しました。");
         }
       })();
     });
