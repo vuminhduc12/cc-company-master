@@ -7,9 +7,21 @@ import { quoteFromWatchItem } from "@/lib/watchlist-display";
 
 export function LiveWatchlistStrip() {
   const watchlistState = useUserWatchlist();
-  const { items, refreshStatus, refreshMessage } = watchlistState;
+  const { items, ready, syncMode, refreshStatus, refreshMessage } = watchlistState;
+  const isSyncChecking = !ready || syncMode === "checking";
 
-  if (items.length === 0) return null;
+  if (isSyncChecking) {
+    return <LiveWatchlistSkeleton />;
+  }
+
+  if (items.length === 0) {
+    return (
+      <section className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Live Watchlist</p>
+        <p className="mt-1 text-xs text-slate-500">Watchlist銘柄はまだありません。</p>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
@@ -22,7 +34,7 @@ export function LiveWatchlistStrip() {
         </div>
         <button
           className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-xs font-black text-sky-100 hover:bg-sky-300/20 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={refreshStatus === "running"}
+          disabled={isSyncChecking || refreshStatus === "running"}
           onClick={() => void watchlistState.refreshAll()}
           type="button"
         >
@@ -47,6 +59,29 @@ export function LiveWatchlistStrip() {
             </Link>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function LiveWatchlistSkeleton() {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Live Watchlist</p>
+          <p className="mt-1 text-xs text-slate-500">WatchlistのDB同期を確認中です。</p>
+        </div>
+        <div className="h-9 w-20 animate-pulse rounded-full bg-slate-800" />
+      </div>
+      <div className="mt-3 flex gap-2 overflow-hidden pb-1">
+        {[0, 1, 2, 3].map((item) => (
+          <div key={item} className="min-w-[132px] rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2">
+            <div className="h-3 w-14 animate-pulse rounded bg-slate-700/70" />
+            <div className="mt-3 h-4 w-20 animate-pulse rounded bg-slate-800" />
+            <div className="mt-2 h-3 w-12 animate-pulse rounded bg-slate-800" />
+          </div>
+        ))}
       </div>
     </section>
   );
