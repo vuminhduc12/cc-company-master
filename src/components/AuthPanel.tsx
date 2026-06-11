@@ -34,6 +34,8 @@ export function AuthPanel() {
     try {
       await auth.signOut();
       setStatus("done");
+      setEmail("");
+      setPassword("");
       setMessage("ログアウトしました。未ログイン時はlocalStorage保存に戻ります。");
     } catch (error) {
       setStatus("error");

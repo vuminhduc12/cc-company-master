@@ -18,12 +18,20 @@ export function useSupabaseAuth() {
       return;
     }
 
-    supabase.auth.getUser().then(({ data }) => {
-      if (!cancelled) {
-        setUser(data.user ?? null);
-        setLoading(false);
-      }
-    });
+    supabase.auth.getUser()
+      .then(({ data }) => {
+        if (!cancelled) {
+          setUser(data.user ?? null);
+          setLoading(false);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setUser(null);
+          setLoading(false);
+          setAuthMessage(error instanceof Error ? `Supabaseセッション確認に失敗しました: ${error.message}` : "Supabaseセッション確認に失敗しました。");
+        }
+      });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
