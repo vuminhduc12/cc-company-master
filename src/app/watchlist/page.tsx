@@ -40,6 +40,7 @@ export default function WatchlistPage() {
     items: visibleItems,
     customItems,
     removedTickers,
+    ready,
     syncMode,
     refreshStatus,
     refreshMessage,
@@ -54,6 +55,7 @@ export default function WatchlistPage() {
   const [message, setMessage] = useState("");
   const [plan, setPlan] = useState<PlanDefinition>(planDefinitions.free);
   const defaultTickerSet = useMemo(() => new Set(watchlist.map((item) => item.stock.ticker)), []);
+  const isSyncChecking = !ready || syncMode === "checking";
 
   useEffect(() => {
     async function loadPlan() {
@@ -76,6 +78,7 @@ export default function WatchlistPage() {
   }, [refreshMessage]);
 
   async function searchTicker() {
+    if (isSyncChecking) return;
     const normalized = normalizeTickerForMarket(ticker, market);
     if (!normalized) return;
     setSearchStatus("running");
@@ -94,7 +97,7 @@ export default function WatchlistPage() {
   }
 
   function addLookupResult() {
-    if (!lookupResult) return;
+    if (!lookupResult || isSyncChecking) return;
     const alreadyVisible = visibleItems.some((row) => row.stock.ticker === lookupResult.stock.ticker);
     if (!alreadyVisible && visibleItems.length >= plan.watchlistItems) {
       setSearchStatus("error");
@@ -122,6 +125,7 @@ export default function WatchlistPage() {
   }
 
   function deleteTicker(tickerToDelete: string) {
+    if (isSyncChecking) return;
     setCustomItems((current) => current.filter((item) => item.stock.ticker !== tickerToDelete));
     setRemovedTickers((current) => current.includes(tickerToDelete) ? current : [...current, tickerToDelete]);
     if (lookupResult?.stock.ticker === tickerToDelete) setLookupResult(null);
@@ -130,6 +134,7 @@ export default function WatchlistPage() {
   }
 
   function restoreDefaults() {
+    if (isSyncChecking) return;
     setRemovedTickers([]);
     if (auth.user) void restoreDbRemovedDefaults(auth.user.id);
     setMessage(`初期Watchlist銘柄を復元しました。${auth.user ? " Supabaseにも反映しました。" : ""}`);
@@ -149,12 +154,12 @@ export default function WatchlistPage() {
               データ取得優先順位: <span className="font-black">{stockDataProviderPriorityLabel}</span>
             </p>
             <p className="mt-2 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-2 text-xs leading-5 text-cyan-100">
-              保存モード: <span className="font-black">{syncMode === "checking" ? "同期確認中" : syncMode === "supabase" ? `Supabase DB同期 (${auth.email})` : "localStorage"}</span>
+              保存モード: <span className="font-black">{isSyncChecking ? "DB同期確認中" : syncMode === "supabase" ? `Supabase DB同期 (${auth.email})` : "localStorage"}</span>
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <WatchStat label="表示銘柄" value={`${visibleItems.length}`} tone="default" />
-              <WatchStat label="追加銘柄" value={`${customItems.filter((item) => !defaultTickerSet.has(item.stock.ticker)).length}`} tone="green" />
-              <WatchStat label="削除済み初期銘柄" value={`${removedTickers.length}`} tone="yellow" />
+              <WatchStat label="表示銘柄" value={isSyncChecking ? "-" : `${visibleItems.length}`} tone="default" />
+              <WatchStat label="追加銘柄" value={isSyncChecking ? "-" : `${customItems.filter((item) => !defaultTickerSet.has(item.stock.ticker)).length}`} tone="green" />
+              <WatchStat label="削除済み初期銘柄" value={isSyncChecking ? "-" : `${removedTickers.length}`} tone="yellow" />
             </div>
           </div>
           <div className="border-t border-white/10 bg-slate-950/45 p-5 sm:p-6 xl:border-l xl:border-t-0">
@@ -187,10 +192,11 @@ export default function WatchlistPage() {
                   if (event.key === "Enter") void searchTicker();
                 }}
                 placeholder={market === "jp" ? "例: 7203" : "例: RGTI"}
+                disabled={isSyncChecking}
               />
               <button
                 className="rounded-2xl bg-sky-300 px-4 py-3 text-sm font-black text-slate-950 hover:bg-sky-200 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={searchStatus === "running"}
+                disabled={isSyncChecking || searchStatus === "running"}
                 onClick={() => void searchTicker()}
               >
                 {searchStatus === "running" ? "検索中" : "検索"}
@@ -229,13 +235,14 @@ export default function WatchlistPage() {
         <div className="flex flex-wrap gap-2">
           <button
             className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-xs font-black text-sky-100 hover:bg-sky-300/20 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={refreshStatus === "running" || visibleItems.length === 0}
+            disabled={isSyncChecking || refreshStatus === "running" || visibleItems.length === 0}
             onClick={() => void refreshAll()}
           >
             {refreshStatus === "running" ? "更新中..." : "全部リアル更新"}
           </button>
           <button
-            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black text-slate-200 hover:bg-white/10"
+            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isSyncChecking}
             onClick={restoreDefaults}
           >
             初期銘柄を復元
@@ -249,9 +256,9 @@ export default function WatchlistPage() {
         </div>
       ) : null}
 
-      {syncMode === "checking" ? (
+      {isSyncChecking ? (
         <div className="rounded-2xl border border-cyan-300/25 bg-cyan-300/10 p-5 text-sm leading-6 text-cyan-100">
-          Watchlistの保存先（Supabase）を確認中です。銘柄データはそのまま表示・更新できます。
+          Watchlistの保存先（Supabase）を確認中です。DB同期が完了するまで銘柄操作を一時停止しています。
         </div>
       ) : null}
       {refreshStatus === "running" ? (
@@ -260,32 +267,43 @@ export default function WatchlistPage() {
         </div>
       ) : null}
 
-      <DataTable
-        headers={["Ticker", "会社名", "市場", "現在値", "前日比", "スコア", "ステータス", "ソース", "メモ", "操作"]}
-        rows={visibleItems.map((item) => {
-          const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
-          return [
-            <Link key="ticker" className="font-bold text-sky-300 hover:text-sky-200" href={`/stocks/${item.stock.ticker}`}>
-              {item.stock.ticker}
-            </Link>,
-            item.stock.companyName,
-            item.stock.exchange,
-            formatPrice(item.stock.ticker, item.currentPrice),
-            <span key="change" className={change >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>{change ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span>,
-            item.score ?? "-",
-            <StatusBadge key="status" value={item.status} />,
-            item.source ?? "-",
-            item.memo,
-            <button
-              key="delete"
-              className="rounded-full border border-red-300/30 bg-red-400/10 px-3 py-1.5 text-xs font-black text-red-200 hover:bg-red-400/20"
-              onClick={() => deleteTicker(item.stock.ticker)}
-            >
-              削除
-            </button>
-          ];
-        })}
-      />
+      {isSyncChecking ? (
+        <WatchlistSyncSkeleton />
+      ) : (
+        <>
+          <div className="space-y-3 md:hidden">
+            {visibleItems.map((item) => <WatchlistMobileCard key={item.stock.ticker} item={item} onDelete={deleteTicker} />)}
+          </div>
+          <div className="hidden md:block">
+            <DataTable
+              headers={["Ticker", "会社名", "市場", "現在値", "前日比", "スコア", "ステータス", "ソース", "メモ", "操作"]}
+              rows={visibleItems.map((item) => {
+                const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
+                return [
+                  <Link key="ticker" className="font-bold text-sky-300 hover:text-sky-200" href={`/stocks/${item.stock.ticker}`}>
+                    {item.stock.ticker}
+                  </Link>,
+                  item.stock.companyName,
+                  item.stock.exchange,
+                  formatPrice(item.stock.ticker, item.currentPrice),
+                  <span key="change" className={change >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>{change ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span>,
+                  item.score ?? "-",
+                  <StatusBadge key="status" value={item.status} />,
+                  item.source ?? "-",
+                  item.memo,
+                  <button
+                    key="delete"
+                    className="rounded-full border border-red-300/30 bg-red-400/10 px-3 py-1.5 text-xs font-black text-red-200 hover:bg-red-400/20"
+                    onClick={() => deleteTicker(item.stock.ticker)}
+                  >
+                    削除
+                  </button>
+                ];
+              })}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -337,6 +355,60 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl bg-slate-950/60 p-3">
       <p className="text-xs font-semibold text-slate-500">{label}</p>
       <p className="mt-1 font-black text-slate-50">{value}</p>
+    </div>
+  );
+}
+
+function WatchlistMobileCard({ item, onDelete }: { item: CustomWatchItem; onDelete: (ticker: string) => void }) {
+  const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
+
+  return (
+    <article className="rounded-2xl border border-white/10 bg-slate-900/82 p-4 shadow-lg shadow-black/20 ring-1 ring-white/5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link className="text-lg font-black text-sky-200" href={`/stocks/${item.stock.ticker}`}>
+            {item.stock.ticker}
+          </Link>
+          <p className="mt-1 truncate text-sm text-slate-300">{item.stock.companyName}</p>
+          <p className="mt-1 text-xs text-slate-500">{item.stock.exchange} / {item.source ?? "-"}</p>
+        </div>
+        <StatusBadge value={item.status} />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <MiniMetric label="現在値" value={formatPrice(item.stock.ticker, item.currentPrice)} />
+        <MiniMetric label="前日比" value={change ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"} />
+        <MiniMetric label="スコア" value={`${item.score ?? "-"}`} />
+        <MiniMetric label="メモ" value={item.memo || "-"} />
+      </div>
+      <button
+        className="mt-3 w-full rounded-2xl border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black text-red-200 hover:bg-red-400/20"
+        onClick={() => onDelete(item.stock.ticker)}
+      >
+        削除
+      </button>
+    </article>
+  );
+}
+
+function WatchlistSyncSkeleton() {
+  return (
+    <div className="space-y-3">
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="rounded-2xl border border-white/10 bg-slate-900/82 p-4 shadow-lg shadow-black/20 ring-1 ring-white/5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="h-5 w-24 animate-pulse rounded bg-slate-700/70" />
+              <div className="mt-3 h-3 w-44 max-w-full animate-pulse rounded bg-slate-800" />
+            </div>
+            <div className="h-7 w-20 animate-pulse rounded-full bg-slate-800" />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {[0, 1, 2, 3].map((cell) => (
+              <div key={cell} className="h-14 animate-pulse rounded-xl bg-slate-950/55" />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

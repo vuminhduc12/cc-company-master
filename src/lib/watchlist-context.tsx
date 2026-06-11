@@ -107,6 +107,9 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
       if (cancelled) return;
       setSyncMode("checking");
+      setReady(false);
+      setCustomItems([]);
+      setRemovedTickers([]);
       const localCustomItems = loadCustomWatchItems();
       const localRemovedTickers = loadRemovedWatchTickers();
       const dbState = await loadDbWatchlistState(activeUserId);
@@ -155,6 +158,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       void (async () => {
         setReady(false);
         setSyncMode("checking");
+        setCustomItems([]);
+        setRemovedTickers([]);
         autoRefreshStarted.current = false;
         const localCustomItems = loadCustomWatchItems();
         const localRemovedTickers = loadRemovedWatchTickers();
