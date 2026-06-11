@@ -68,13 +68,17 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   const [historyRevision, setHistoryRevision] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
   const autoRefreshStarted = useRef(false);
+  const syncRequestId = useRef(0);
 
   const visibleItems = useMemo(
     () => mergeVisibleWatchItems(customItems, removedTickers, jobResult),
     [customItems, removedTickers, jobResult]
   );
 
-  const items = visibleItems;
+  const items = useMemo(
+    () => ready && syncMode !== "checking" ? visibleItems : [],
+    [ready, syncMode, visibleItems]
+  );
 
   useEffect(() => {
     const supabase = createBrowserSupabase();
@@ -91,7 +95,9 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
     async function loadForUser() {
       if (!supabase) return;
+      const requestId = ++syncRequestId.current;
       const { data } = await supabase.auth.getUser();
+      if (cancelled || requestId !== syncRequestId.current) return;
       const activeUserId = data.user?.id ?? null;
       if (!cancelled) setUserId(activeUserId);
 
@@ -113,7 +119,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       const localCustomItems = loadCustomWatchItems();
       const localRemovedTickers = loadRemovedWatchTickers();
       const dbState = await loadDbWatchlistState(activeUserId);
-      if (cancelled) return;
+      if (cancelled || requestId !== syncRequestId.current) return;
 
       if (!dbState) {
         setCustomItems(localCustomItems);
@@ -125,7 +131,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
       if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
         await migrateLocalWatchlistToDb(activeUserId, localCustomItems, localRemovedTickers);
-        if (cancelled) return;
+        if (cancelled || requestId !== syncRequestId.current) return;
         setCustomItems(localCustomItems);
         setRemovedTickers(localRemovedTickers);
         setSyncMode("supabase");
@@ -143,6 +149,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
+      const requestId = ++syncRequestId.current;
       const activeUserId = session?.user?.id ?? null;
       setUserId(activeUserId);
 
@@ -164,7 +171,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         const localCustomItems = loadCustomWatchItems();
         const localRemovedTickers = loadRemovedWatchTickers();
         const dbState = await loadDbWatchlistState(activeUserId);
-        if (cancelled) return;
+        if (cancelled || requestId !== syncRequestId.current) return;
 
         if (!dbState) {
           setCustomItems(localCustomItems);
@@ -176,7 +183,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
         if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
           await migrateLocalWatchlistToDb(activeUserId, localCustomItems, localRemovedTickers);
-          if (cancelled) return;
+          if (cancelled || requestId !== syncRequestId.current) return;
           setCustomItems(localCustomItems);
           setRemovedTickers(localRemovedTickers);
           setSyncMode("supabase");
