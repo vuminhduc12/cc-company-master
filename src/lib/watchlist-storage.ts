@@ -100,7 +100,8 @@ export async function loadDbWatchlistState(userId: string) {
     .select("ticker, market, item, removed")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
-  if (error || !data) return null;
+  if (error) throw new Error(error.message);
+  if (!data) return { customItems: [], removedTickers: [] };
   const customItems: CustomWatchItem[] = [];
   const removedTickers: string[] = [];
   (data as DbWatchlistRow[]).forEach((row) => {

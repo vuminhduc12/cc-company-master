@@ -42,6 +42,7 @@ export default function WatchlistPage() {
     removedTickers,
     ready,
     syncMode,
+    syncError,
     refreshStatus,
     refreshMessage,
     setCustomItems,
@@ -154,7 +155,7 @@ export default function WatchlistPage() {
               データ取得優先順位: <span className="font-black">{stockDataProviderPriorityLabel}</span>
             </p>
             <p className="mt-2 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-2 text-xs leading-5 text-cyan-100">
-              保存モード: <span className="font-black">{isSyncChecking ? "DB同期確認中" : syncMode === "supabase" ? `Supabase DB同期 (${auth.email})` : "localStorage"}</span>
+              保存モード: <span className="font-black">{isSyncChecking ? "DB同期確認中" : syncMode === "supabase" ? `Supabase DB同期 (${auth.email})` : syncError ? "localStorage（DB同期失敗）" : "localStorage"}</span>
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <WatchStat label="表示銘柄" value={isSyncChecking ? "-" : `${visibleItems.length}`} tone="default" />
@@ -259,6 +260,11 @@ export default function WatchlistPage() {
       {isSyncChecking ? (
         <div className="rounded-2xl border border-cyan-300/25 bg-cyan-300/10 p-5 text-sm leading-6 text-cyan-100">
           Watchlistの保存先（Supabase）を確認中です。DB同期が完了するまで銘柄操作を一時停止しています。
+        </div>
+      ) : null}
+      {!isSyncChecking && syncError ? (
+        <div className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-5 text-sm leading-6 text-yellow-100">
+          {syncError} 現在は一時的にこの端末のlocalStorageを表示しています。
         </div>
       ) : null}
       {refreshStatus === "running" ? (

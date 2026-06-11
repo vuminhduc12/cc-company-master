@@ -23,6 +23,7 @@ import {
   type CustomWatchItem
 } from "@/lib/watchlist-storage";
 type RefreshStatus = "idle" | "running" | "error";
+const watchlistSyncTimeoutMs = 8000;
 
 type WatchlistContextValue = {
   items: CustomWatchItem[];
@@ -30,6 +31,7 @@ type WatchlistContextValue = {
   removedTickers: string[];
   ready: boolean;
   syncMode: "checking" | "local" | "supabase";
+  syncError: string;
   refreshStatus: RefreshStatus;
   refreshMessage: string;
   historyRevision: number;
@@ -45,6 +47,7 @@ const defaultWatchlistContext: WatchlistContextValue = {
   removedTickers: [],
   ready: false,
   syncMode: "checking",
+  syncError: "",
   refreshStatus: "idle",
   refreshMessage: "",
   historyRevision: 0,
@@ -61,6 +64,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   const [customItems, setCustomItems] = useState<CustomWatchItem[]>([]);
   const [removedTickers, setRemovedTickers] = useState<string[]>([]);
   const [syncMode, setSyncMode] = useState<"checking" | "local" | "supabase">("checking");
+  const [syncError, setSyncError] = useState("");
   const [ready, setReady] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>("idle");
   const [refreshMessage, setRefreshMessage] = useState("");
@@ -86,6 +90,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       setCustomItems(loadCustomWatchItems());
       setRemovedTickers(loadRemovedWatchTickers());
       setSyncMode("local");
+      setSyncError("");
       setReady(true);
       setUserId(null);
       return;
@@ -96,53 +101,67 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     async function loadForUser() {
       if (!supabase) return;
       const requestId = ++syncRequestId.current;
-      const { data } = await supabase.auth.getUser();
-      if (cancelled || requestId !== syncRequestId.current) return;
-      const activeUserId = data.user?.id ?? null;
-      if (!cancelled) setUserId(activeUserId);
-
-      if (!activeUserId) {
-        if (!cancelled) {
-          setCustomItems(loadCustomWatchItems());
-          setRemovedTickers(loadRemovedWatchTickers());
-          setSyncMode("local");
-          setReady(true);
-        }
-        return;
-      }
-
-      if (cancelled) return;
-      setSyncMode("checking");
-      setReady(false);
-      setCustomItems([]);
-      setRemovedTickers([]);
-      const localCustomItems = loadCustomWatchItems();
-      const localRemovedTickers = loadRemovedWatchTickers();
-      const dbState = await loadDbWatchlistState(activeUserId);
-      if (cancelled || requestId !== syncRequestId.current) return;
-
-      if (!dbState) {
-        setCustomItems(localCustomItems);
-        setRemovedTickers(localRemovedTickers);
-        setSyncMode("local");
-        setReady(true);
-        return;
-      }
-
-      if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
-        await migrateLocalWatchlistToDb(activeUserId, localCustomItems, localRemovedTickers);
+      try {
+        const { data } = await withTimeout(supabase.auth.getUser(), watchlistSyncTimeoutMs, "ログイン状態の確認がタイムアウトしました。");
         if (cancelled || requestId !== syncRequestId.current) return;
-        setCustomItems(localCustomItems);
-        setRemovedTickers(localRemovedTickers);
-        setSyncMode("supabase");
-        setReady(true);
-        return;
-      }
+        const activeUserId = data.user?.id ?? null;
+        if (!cancelled) setUserId(activeUserId);
 
-      setCustomItems(dbState.customItems);
-      setRemovedTickers(dbState.removedTickers);
-      setSyncMode("supabase");
-      setReady(true);
+        if (!activeUserId) {
+          if (!cancelled) {
+            setCustomItems(loadCustomWatchItems());
+            setRemovedTickers(loadRemovedWatchTickers());
+            setSyncMode("local");
+            setSyncError("");
+            setReady(true);
+          }
+          return;
+        }
+
+        if (cancelled) return;
+        setSyncMode("checking");
+        setSyncError("");
+        setReady(false);
+        setCustomItems([]);
+        setRemovedTickers([]);
+        const localCustomItems = loadCustomWatchItems();
+        const localRemovedTickers = loadRemovedWatchTickers();
+        const dbState = await withTimeout(loadDbWatchlistState(activeUserId), watchlistSyncTimeoutMs, "Watchlist DB同期がタイムアウトしました。");
+        if (cancelled || requestId !== syncRequestId.current) return;
+
+        if (!dbState) {
+          setCustomItems(localCustomItems);
+          setRemovedTickers(localRemovedTickers);
+          setSyncMode("local");
+          setSyncError("Supabase未設定のため、この端末のlocalStorageを使用しています。");
+          setReady(true);
+          return;
+        }
+
+        if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
+          await withTimeout(migrateLocalWatchlistToDb(activeUserId, localCustomItems, localRemovedTickers), watchlistSyncTimeoutMs, "ローカルWatchlistのDB移行がタイムアウトしました。");
+          if (cancelled || requestId !== syncRequestId.current) return;
+          setCustomItems(localCustomItems);
+          setRemovedTickers(localRemovedTickers);
+          setSyncMode("supabase");
+          setSyncError("");
+          setReady(true);
+          return;
+        }
+
+        setCustomItems(dbState.customItems);
+        setRemovedTickers(dbState.removedTickers);
+        setSyncMode("supabase");
+        setSyncError("");
+        setReady(true);
+      } catch (error) {
+        if (cancelled || requestId !== syncRequestId.current) return;
+        setCustomItems(loadCustomWatchItems());
+        setRemovedTickers(loadRemovedWatchTickers());
+        setSyncMode("local");
+        setSyncError(error instanceof Error ? `Supabase DB同期に失敗しました: ${error.message}` : "Supabase DB同期に失敗しました。");
+        setReady(true);
+      }
     }
 
     void loadForUser();
@@ -155,6 +174,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
       if (!activeUserId) {
         setSyncMode("local");
+        setSyncError("");
         setCustomItems(loadCustomWatchItems());
         setRemovedTickers(loadRemovedWatchTickers());
         setReady(true);
@@ -165,36 +185,49 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       void (async () => {
         setReady(false);
         setSyncMode("checking");
+        setSyncError("");
         setCustomItems([]);
         setRemovedTickers([]);
         autoRefreshStarted.current = false;
         const localCustomItems = loadCustomWatchItems();
         const localRemovedTickers = loadRemovedWatchTickers();
-        const dbState = await loadDbWatchlistState(activeUserId);
-        if (cancelled || requestId !== syncRequestId.current) return;
+        try {
+          const dbState = await withTimeout(loadDbWatchlistState(activeUserId), watchlistSyncTimeoutMs, "Watchlist DB同期がタイムアウトしました。");
+          if (cancelled || requestId !== syncRequestId.current) return;
 
-        if (!dbState) {
-          setCustomItems(localCustomItems);
-          setRemovedTickers(localRemovedTickers);
-          setSyncMode("local");
+          if (!dbState) {
+            setCustomItems(localCustomItems);
+            setRemovedTickers(localRemovedTickers);
+            setSyncMode("local");
+            setSyncError("Supabase未設定のため、この端末のlocalStorageを使用しています。");
+            setReady(true);
+            return;
+          }
+
+          if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
+            await withTimeout(migrateLocalWatchlistToDb(activeUserId, localCustomItems, localRemovedTickers), watchlistSyncTimeoutMs, "ローカルWatchlistのDB移行がタイムアウトしました。");
+            if (cancelled || requestId !== syncRequestId.current) return;
+            setCustomItems(localCustomItems);
+            setRemovedTickers(localRemovedTickers);
+            setSyncMode("supabase");
+            setSyncError("");
+            setReady(true);
+            return;
+          }
+
+          setCustomItems(dbState.customItems);
+          setRemovedTickers(dbState.removedTickers);
+          setSyncMode("supabase");
+          setSyncError("");
           setReady(true);
-          return;
-        }
-
-        if (dbState.customItems.length === 0 && dbState.removedTickers.length === 0 && (localCustomItems.length || localRemovedTickers.length)) {
-          await migrateLocalWatchlistToDb(activeUserId, localCustomItems, localRemovedTickers);
+        } catch (error) {
           if (cancelled || requestId !== syncRequestId.current) return;
           setCustomItems(localCustomItems);
           setRemovedTickers(localRemovedTickers);
-          setSyncMode("supabase");
+          setSyncMode("local");
+          setSyncError(error instanceof Error ? `Supabase DB同期に失敗しました: ${error.message}` : "Supabase DB同期に失敗しました。");
           setReady(true);
-          return;
         }
-
-        setCustomItems(dbState.customItems);
-        setRemovedTickers(dbState.removedTickers);
-        setSyncMode("supabase");
-        setReady(true);
       })();
     });
 
@@ -315,6 +348,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     removedTickers,
     ready,
     syncMode,
+    syncError,
     refreshStatus,
     refreshMessage,
     historyRevision,
@@ -322,7 +356,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     setCustomItems,
     setRemovedTickers,
     refreshAll
-  }), [items, customItems, removedTickers, ready, syncMode, refreshStatus, refreshMessage, historyRevision, getTickerHistory, refreshAll]);
+  }), [items, customItems, removedTickers, ready, syncMode, syncError, refreshStatus, refreshMessage, historyRevision, getTickerHistory, refreshAll]);
 
   return <WatchlistContext.Provider value={value}>{children}</WatchlistContext.Provider>;
 }
@@ -378,4 +412,14 @@ function isQuotaExceededError(error: unknown) {
     || error.code === 22
     || error.code === 1014
   );
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timer));
+  });
 }
