@@ -4,7 +4,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 import Link from "next/link";
 import { DataTable } from "@/components/DataTable";
-import { MarketBadge, MarketFilterButton, countWatchlistMarkets, marketForStock, marketForWatchItem, type MarketScope } from "@/components/MarketControls";
+import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForStock, marketForWatchItem } from "@/components/MarketControls";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
@@ -15,6 +15,7 @@ import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-dat
 import { analyzeStock } from "@/lib/scoring";
 import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { useWatchlistLists } from "@/lib/watchlist-lists";
 import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
@@ -34,6 +35,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const { ticker } = use(params);
   const normalizedTicker = normalizeTicker(ticker);
   const jobResult = useAiJobResult();
+  const listManager = useWatchlistLists();
   const userWatchlist = useUserWatchlist();
   const seededHistory = userWatchlist.getTickerHistory(normalizedTicker);
   const { historyData, historyStatus, historyError, realtimeQuote } = useStockLiveData(normalizedTicker, {
@@ -41,7 +43,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     seededHistory
   });
   const [activeSection, setActiveSection] = useState<(typeof decisionNavItems)[number]["id"]>("conclusion");
-  const [detailMarket, setDetailMarket] = useState<MarketScope>("all");
+  const [detailListId, setDetailListId] = useState("all");
 
   const customWatchItem = userWatchlist.items.find((row) => row.stock.ticker === normalizedTicker) ?? null;
   const watchItem = customWatchItem ?? watchlist.find((row) => row.stock.ticker === normalizedTicker) ?? null;
@@ -73,10 +75,10 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       ? resolvedPrices?.source ?? "AI Job"
       : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
   const detailItems = resolveVisibleWatchlist(userWatchlist.items);
-  const detailMarketCounts = useMemo(() => countWatchlistMarkets(detailItems), [detailItems]);
+  const detailListCounts = useMemo(() => countWatchlistLists(listManager.lists, detailItems), [detailItems, listManager.lists]);
   const marketFilteredDetailItems = useMemo(
-    () => detailMarket === "all" ? detailItems : detailItems.filter((item) => marketForWatchItem(item) === detailMarket),
-    [detailItems, detailMarket]
+    () => filterItemsByWatchlistList(detailItems, detailListId),
+    [detailItems, detailListId]
   );
   const isWatchlistFallbackOnly = Boolean(watchItem && !localPrices && !activeHistoryData?.prices?.length && !live?.prices?.length);
   const chartPrices = mergedPrices;
@@ -159,9 +161,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/80 p-2 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <span className="px-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Select Stock</span>
-        <MarketFilterButton active={detailMarket === "all"} count={detailMarketCounts.all} label="すべて" onClick={() => setDetailMarket("all")} />
-        <MarketFilterButton active={detailMarket === "us"} count={detailMarketCounts.us} label="米国株" onClick={() => setDetailMarket("us")} />
-        <MarketFilterButton active={detailMarket === "jp"} count={detailMarketCounts.jp} label="国内株" onClick={() => setDetailMarket("jp")} />
+        {listManager.lists.map((list) => (
+          <MarketFilterButton key={list.id} active={detailListId === list.id} count={detailListCounts[list.id] ?? 0} label={list.name} onClick={() => setDetailListId(list.id)} />
+        ))}
         {marketFilteredDetailItems.map((row) => {
           const active = row.stock.ticker === stock.ticker;
           return (

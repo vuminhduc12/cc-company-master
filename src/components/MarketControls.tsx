@@ -1,10 +1,12 @@
 import type { Stock, WatchlistItem } from "@/types";
+import type { WatchlistList } from "@/lib/watchlist-storage";
 
 export type MarketScope = "all" | "us" | "jp";
 export type StockMarket = Exclude<MarketScope, "all">;
 
 type MarketAwareItem = WatchlistItem & {
   market?: StockMarket;
+  listIds?: string[];
 };
 
 export function marketForTicker(ticker: string): StockMarket {
@@ -25,6 +27,16 @@ export function countWatchlistMarkets(items: MarketAwareItem[]) {
     us: items.filter((item) => marketForWatchItem(item) === "us").length,
     jp: items.filter((item) => marketForWatchItem(item) === "jp").length
   };
+}
+
+export function filterItemsByWatchlistList<T extends MarketAwareItem>(items: T[], listId: string) {
+  if (listId === "all") return items;
+  if (listId === "us" || listId === "jp") return items.filter((item) => marketForWatchItem(item) === listId);
+  return items.filter((item) => item.listIds?.includes(listId));
+}
+
+export function countWatchlistLists(lists: WatchlistList[], items: MarketAwareItem[]) {
+  return Object.fromEntries(lists.map((list) => [list.id, filterItemsByWatchlistList(items, list.id).length]));
 }
 
 export function marketLabel(market: StockMarket) {

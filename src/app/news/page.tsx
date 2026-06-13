@@ -2,33 +2,35 @@
 
 import { useMemo, useState } from "react";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
-import { MarketBadge, MarketFilterButton, countWatchlistMarkets, marketForWatchItem, type MarketScope, type StockMarket } from "@/components/MarketControls";
+import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForWatchItem, type StockMarket } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
 import { news } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
 import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { hiddenNewsStorageKey, hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
+import { useWatchlistLists } from "@/lib/watchlist-lists";
 import type { NewsItem, WatchlistItem } from "@/types";
 
 export default function NewsPage() {
   const jobResult = useAiJobResult();
+  const listManager = useWatchlistLists();
   const userWatchlist = useUserWatchlist();
   const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
-  const [newsMarket, setNewsMarket] = useState<MarketScope>("all");
+  const [newsListId, setNewsListId] = useState("all");
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
   const allVisibleItems = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
   const staleCount = countStaleNews(allVisibleItems);
   const items = filterFreshNews(allVisibleItems);
-  const marketCounts = useMemo(() => countWatchlistMarkets(visibleWatchlist), [visibleWatchlist]);
+  const listCounts = useMemo(() => countWatchlistLists(listManager.lists, visibleWatchlist), [listManager.lists, visibleWatchlist]);
   const marketWatchlist = useMemo(
-    () => newsMarket === "all" ? visibleWatchlist : visibleWatchlist.filter((item) => marketForWatchItem(item) === newsMarket),
-    [newsMarket, visibleWatchlist]
+    () => filterItemsByWatchlistList(visibleWatchlist, newsListId),
+    [newsListId, visibleWatchlist]
   );
   const marketTickerSet = useMemo(() => new Set(marketWatchlist.map((item) => item.stock.ticker)), [marketWatchlist]);
   const marketItems = useMemo(
-    () => newsMarket === "all" ? items : items.filter((item) => marketTickerSet.has(item.ticker)),
-    [items, marketTickerSet, newsMarket]
+    () => newsListId === "all" ? items : items.filter((item) => marketTickerSet.has(item.ticker)),
+    [items, marketTickerSet, newsListId]
   );
   const tickerTabs = useMemo(() => buildTickerTabs(marketItems, marketWatchlist), [marketItems, marketWatchlist]);
   const [selectedTicker, setSelectedTicker] = useState("ALL");
@@ -37,7 +39,10 @@ export default function NewsPage() {
   const featured = filteredItems[0];
   const positiveCount = filteredItems.filter((item) => item.sentiment === "Positive").length;
   const negativeCount = filteredItems.filter((item) => item.sentiment === "Negative").length;
+  const highImpactCount = filteredItems.filter((item) => item.impactScore >= 8).length;
   const averageImpact = filteredItems.length > 0 ? filteredItems.reduce((sum, item) => sum + item.impactScore, 0) / filteredItems.length : 0;
+  const activeListName = listManager.lists.find((list) => list.id === newsListId)?.name ?? "全Watchlist";
+  const activeTickerName = activeTicker === "ALL" ? "全銘柄" : tickerTabs.find((tab) => tab.ticker === activeTicker)?.name ?? activeTicker;
 
   function deleteNews(item: NewsItem) {
     hideNewsItem(item);
@@ -75,6 +80,21 @@ export default function NewsPage() {
         </div>
       ) : null}
 
+      <section className="rounded-2xl border border-sky-300/20 bg-sky-300/[0.07] p-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-300">Current View</p>
+            <h3 className="mt-1 text-xl font-black text-slate-50">{activeListName} / {activeTickerName}</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">赤は最重要、緑は好材料、赤系は悪材料です。まず重要度と銘柄位置を確認してください。</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <MiniSignal label="最重要" value={`${highImpactCount}`} tone="red" />
+            <MiniSignal label="好材料" value={`${positiveCount}`} tone="green" />
+            <MiniSignal label="悪材料" value={`${negativeCount}`} tone="red" />
+          </div>
+        </div>
+      </section>
+
       <section className="grid gap-3 md:grid-cols-4">
         <Metric label="表示ニュース" value={`${filteredItems.length}件`} />
         <Metric label="Positive" value={`${positiveCount}件`} tone="green" />
@@ -82,11 +102,11 @@ export default function NewsPage() {
         <Metric label="平均影響度" value={`${averageImpact.toFixed(1)}/10`} tone="blue" />
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-slate-900/75 p-3 shadow-xl shadow-black/20 ring-1 ring-white/5">
+      <section className="sticky top-0 z-10 -mx-2 rounded-2xl border border-white/10 bg-[#020617]/95 p-3 shadow-xl shadow-black/20 ring-1 ring-white/5 backdrop-blur sm:static sm:mx-0 sm:bg-slate-900/75">
         <div className="mb-3 flex flex-wrap gap-2">
-          <MarketFilterButton active={newsMarket === "all"} count={marketCounts.all} label="すべて" onClick={() => setNewsMarket("all")} />
-          <MarketFilterButton active={newsMarket === "us"} count={marketCounts.us} label="米国株" onClick={() => setNewsMarket("us")} />
-          <MarketFilterButton active={newsMarket === "jp"} count={marketCounts.jp} label="国内株" onClick={() => setNewsMarket("jp")} />
+          {listManager.lists.map((list) => (
+            <MarketFilterButton key={list.id} active={newsListId === list.id} count={listCounts[list.id] ?? 0} label={list.name} onClick={() => setNewsListId(list.id)} />
+          ))}
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
           <TickerFilterButton
@@ -148,6 +168,15 @@ function TickerFilterButton({ active, count, label, market, onClick, ticker }: {
       </span>
       <span className={`rounded-full px-2 py-1 text-xs font-black ${active ? "bg-slate-950/15" : "bg-white/10"}`}>{count}</span>
     </button>
+  );
+}
+
+function MiniSignal({ label, value, tone }: { label: string; value: string; tone: "green" | "red" }) {
+  return (
+    <div className={tone === "green" ? "rounded-xl border border-green-300/20 bg-green-300/10 px-3 py-2" : "rounded-xl border border-red-300/20 bg-red-300/10 px-3 py-2"}>
+      <p className={tone === "green" ? "text-[10px] font-bold text-green-200" : "text-[10px] font-bold text-red-200"}>{label}</p>
+      <p className={tone === "green" ? "mt-1 text-lg font-black text-green-100" : "mt-1 text-lg font-black text-red-100"}>{value}</p>
+    </div>
   );
 }
 

@@ -6,7 +6,7 @@ import { AiEmployeeCard } from "@/components/AiEmployeeCard";
 import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { DataTable } from "@/components/DataTable";
 import { FinanceDashboardChart, type IntradayPoint } from "@/components/FinanceDashboardChart";
-import { MarketBadge, MarketFilterButton, countWatchlistMarkets, marketForWatchItem, type MarketScope } from "@/components/MarketControls";
+import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForWatchItem } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { StatCard } from "@/components/StatCard";
@@ -20,6 +20,7 @@ import { analyzeStock, statusFromScore } from "@/lib/scoring";
 import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { useWatchlistLists } from "@/lib/watchlist-lists";
 import type { AiStockExecutionAudit, DailyPrice, NewsItem, Stock, WatchStatus, WatchlistItem } from "@/types";
 
 type RealtimeQuote = {
@@ -79,15 +80,16 @@ export default function DashboardPage() {
   const [historyData, setHistoryData] = useState<HistoryApiResult | null>(null);
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [historyError, setHistoryError] = useState("");
-  const [dashboardMarket, setDashboardMarket] = useState<MarketScope>("all");
+  const [dashboardListId, setDashboardListId] = useState("all");
   const jobResult = useAiJobResult();
+  const listManager = useWatchlistLists();
   const executionAudit = resolveAiJobAudit(jobResult);
   const userWatchlist = useUserWatchlist();
   const dashboardWatchlist = resolveVisibleWatchlist(userWatchlist.items);
-  const dashboardMarketCounts = useMemo(() => countWatchlistMarkets(dashboardWatchlist), [dashboardWatchlist]);
+  const dashboardListCounts = useMemo(() => countWatchlistLists(listManager.lists, dashboardWatchlist), [dashboardWatchlist, listManager.lists]);
   const marketFilteredWatchlist = useMemo(
-    () => dashboardMarket === "all" ? dashboardWatchlist : dashboardWatchlist.filter((item) => marketForWatchItem(item) === dashboardMarket),
-    [dashboardMarket, dashboardWatchlist]
+    () => filterItemsByWatchlistList(dashboardWatchlist, dashboardListId),
+    [dashboardListId, dashboardWatchlist]
   );
   const baseLatest = latestPrice(prices);
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
@@ -128,9 +130,9 @@ export default function DashboardPage() {
   const hasExtendedPrice = Boolean(realtimeQuote?.extended?.price);
   const selectedFinanceUrl = `https://www.google.com/finance/quote/${encodeURIComponent(selectedItem.stock.ticker)}:${encodeURIComponent(selectedItem.stock.exchange)}`;
 
-  function changeDashboardMarket(nextMarket: MarketScope) {
-    setDashboardMarket(nextMarket);
-    const nextItems = nextMarket === "all" ? dashboardWatchlist : dashboardWatchlist.filter((item) => marketForWatchItem(item) === nextMarket);
+  function changeDashboardList(nextListId: string) {
+    setDashboardListId(nextListId);
+    const nextItems = filterItemsByWatchlistList(dashboardWatchlist, nextListId);
     if (nextItems.length > 0 && !nextItems.some((item) => item.stock.ticker === selectedTicker)) {
       setSelectedTicker(nextItems[0].stock.ticker);
     }
@@ -218,9 +220,9 @@ export default function DashboardPage() {
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 text-slate-950 shadow-2xl shadow-black/20">
         <div className="border-b border-slate-200 bg-white px-3 py-3 sm:px-5">
           <div className="mb-3 flex flex-wrap gap-2">
-            <MarketFilterButton active={dashboardMarket === "all"} count={dashboardMarketCounts.all} label="すべて" onClick={() => changeDashboardMarket("all")} variant="light" />
-            <MarketFilterButton active={dashboardMarket === "us"} count={dashboardMarketCounts.us} label="米国株" onClick={() => changeDashboardMarket("us")} variant="light" />
-            <MarketFilterButton active={dashboardMarket === "jp"} count={dashboardMarketCounts.jp} label="国内株" onClick={() => changeDashboardMarket("jp")} variant="light" />
+            {listManager.lists.map((list) => (
+              <MarketFilterButton key={list.id} active={dashboardListId === list.id} count={dashboardListCounts[list.id] ?? 0} label={list.name} onClick={() => changeDashboardList(list.id)} variant="light" />
+            ))}
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
             {marketFilteredWatchlist.map((item) => {

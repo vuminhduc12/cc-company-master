@@ -383,6 +383,7 @@ function toMinimalPersistedWatchItem(item: CustomWatchItem): CustomWatchItem {
     status: item.status,
     memo: item.memo,
     market: item.market,
+    listIds: item.listIds,
     score: item.score,
     source: item.source,
     fetchedAt: item.fetchedAt,
