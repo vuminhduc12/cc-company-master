@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { MarketBadge, marketForWatchItem } from "@/components/MarketControls";
 import { useUserWatchlist } from "@/lib/watchlist-context";
 import { isJapaneseTicker } from "@/lib/watchlist-storage";
 import { quoteFromWatchItem } from "@/lib/watchlist-display";
@@ -44,13 +45,17 @@ export function LiveWatchlistStrip() {
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
         {items.map((item) => {
           const quote = quoteFromWatchItem(item);
+          const itemMarket = marketForWatchItem(item);
           return (
             <Link
               key={item.stock.ticker}
-              className="min-w-[132px] rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2 transition hover:border-sky-300/30 hover:bg-sky-300/10"
+              className={`min-w-[142px] rounded-xl border bg-slate-950/55 px-3 py-2 transition hover:bg-sky-300/10 ${itemMarket === "jp" ? "border-amber-300/25 hover:border-amber-300/45" : "border-cyan-300/25 hover:border-cyan-300/45"}`}
               href={`/stocks/${item.stock.ticker}`}
             >
-              <p className="text-xs font-black text-sky-100">{item.stock.ticker}</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-black text-sky-100">{item.stock.ticker}</p>
+                <MarketBadge market={itemMarket} compact />
+              </div>
               <p className="mt-1 text-sm font-bold text-slate-50">{formatPrice(item.stock.ticker, quote.price)}</p>
               <p className={`mt-0.5 text-xs font-semibold ${quote.changePercent >= 0 ? "text-green-400" : "text-red-400"}`}>
                 {quote.price ? `${quote.changePercent >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%` : "-"}

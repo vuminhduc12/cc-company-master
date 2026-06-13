@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
+import { MarketBadge, MarketFilterButton, countWatchlistMarkets, marketForWatchItem, type MarketScope, type StockMarket } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
 import { news } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
@@ -14,14 +15,25 @@ export default function NewsPage() {
   const jobResult = useAiJobResult();
   const userWatchlist = useUserWatchlist();
   const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
+  const [newsMarket, setNewsMarket] = useState<MarketScope>("all");
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
   const allVisibleItems = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
   const staleCount = countStaleNews(allVisibleItems);
   const items = filterFreshNews(allVisibleItems);
-  const tickerTabs = useMemo(() => buildTickerTabs(items, visibleWatchlist), [items, visibleWatchlist]);
+  const marketCounts = useMemo(() => countWatchlistMarkets(visibleWatchlist), [visibleWatchlist]);
+  const marketWatchlist = useMemo(
+    () => newsMarket === "all" ? visibleWatchlist : visibleWatchlist.filter((item) => marketForWatchItem(item) === newsMarket),
+    [newsMarket, visibleWatchlist]
+  );
+  const marketTickerSet = useMemo(() => new Set(marketWatchlist.map((item) => item.stock.ticker)), [marketWatchlist]);
+  const marketItems = useMemo(
+    () => newsMarket === "all" ? items : items.filter((item) => marketTickerSet.has(item.ticker)),
+    [items, marketTickerSet, newsMarket]
+  );
+  const tickerTabs = useMemo(() => buildTickerTabs(marketItems, marketWatchlist), [marketItems, marketWatchlist]);
   const [selectedTicker, setSelectedTicker] = useState("ALL");
   const activeTicker = selectedTicker === "ALL" || tickerTabs.some((tab) => tab.ticker === selectedTicker) ? selectedTicker : "ALL";
-  const filteredItems = activeTicker === "ALL" ? items : items.filter((item) => item.ticker === activeTicker);
+  const filteredItems = activeTicker === "ALL" ? marketItems : marketItems.filter((item) => item.ticker === activeTicker);
   const featured = filteredItems[0];
   const positiveCount = filteredItems.filter((item) => item.sentiment === "Positive").length;
   const negativeCount = filteredItems.filter((item) => item.sentiment === "Negative").length;
@@ -71,10 +83,15 @@ export default function NewsPage() {
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-slate-900/75 p-3 shadow-xl shadow-black/20 ring-1 ring-white/5">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <MarketFilterButton active={newsMarket === "all"} count={marketCounts.all} label="すべて" onClick={() => setNewsMarket("all")} />
+          <MarketFilterButton active={newsMarket === "us"} count={marketCounts.us} label="米国株" onClick={() => setNewsMarket("us")} />
+          <MarketFilterButton active={newsMarket === "jp"} count={marketCounts.jp} label="国内株" onClick={() => setNewsMarket("jp")} />
+        </div>
         <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
           <TickerFilterButton
             active={activeTicker === "ALL"}
-            count={items.length}
+            count={marketItems.length}
             label="All"
             onClick={() => setSelectedTicker("ALL")}
             ticker="ALL"
@@ -85,6 +102,7 @@ export default function NewsPage() {
               active={activeTicker === tab.ticker}
               count={tab.count}
               label={tab.name}
+              market={tab.market}
               onClick={() => setSelectedTicker(tab.ticker)}
               ticker={tab.ticker}
             />
@@ -108,7 +126,7 @@ export default function NewsPage() {
   );
 }
 
-function TickerFilterButton({ active, count, label, onClick, ticker }: { active: boolean; count: number; label: string; onClick: () => void; ticker: string }) {
+function TickerFilterButton({ active, count, label, market, onClick, ticker }: { active: boolean; count: number; label: string; market?: StockMarket; onClick: () => void; ticker: string }) {
   const activeStyle = ticker === "ALL"
     ? "border-slate-200/30 bg-slate-100 text-slate-950"
     : "border-sky-300/40 bg-sky-300 text-slate-950";
@@ -122,7 +140,10 @@ function TickerFilterButton({ active, count, label, onClick, ticker }: { active:
       type="button"
     >
       <span className="min-w-0">
-        <span className="block text-xs font-black uppercase tracking-[0.18em]">{ticker}</span>
+        <span className="flex items-center gap-2">
+          <span className="block text-xs font-black uppercase tracking-[0.18em]">{ticker}</span>
+          {market ? <MarketBadge market={market} compact /> : null}
+        </span>
         <span className="block truncate text-[11px] font-semibold opacity-75">{label}</span>
       </span>
       <span className={`rounded-full px-2 py-1 text-xs font-black ${active ? "bg-slate-950/15" : "bg-white/10"}`}>{count}</span>
@@ -154,6 +175,7 @@ function buildTickerTabs(items: typeof news, visibleWatchlist: WatchlistItem[]) 
   return visibleWatchlist.map((item) => ({
     ticker: item.stock.ticker,
     name: item.stock.companyName,
+    market: marketForWatchItem(item),
     count: items.filter((newsItem) => newsItem.ticker === item.stock.ticker).length
   }));
 }

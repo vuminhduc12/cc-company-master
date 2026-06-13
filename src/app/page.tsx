@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
 import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { DataTable } from "@/components/DataTable";
 import { FinanceDashboardChart, type IntradayPoint } from "@/components/FinanceDashboardChart";
+import { MarketBadge, MarketFilterButton, countWatchlistMarkets, marketForWatchItem, type MarketScope } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { StatCard } from "@/components/StatCard";
@@ -78,10 +79,16 @@ export default function DashboardPage() {
   const [historyData, setHistoryData] = useState<HistoryApiResult | null>(null);
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [historyError, setHistoryError] = useState("");
+  const [dashboardMarket, setDashboardMarket] = useState<MarketScope>("all");
   const jobResult = useAiJobResult();
   const executionAudit = resolveAiJobAudit(jobResult);
   const userWatchlist = useUserWatchlist();
   const dashboardWatchlist = resolveVisibleWatchlist(userWatchlist.items);
+  const dashboardMarketCounts = useMemo(() => countWatchlistMarkets(dashboardWatchlist), [dashboardWatchlist]);
+  const marketFilteredWatchlist = useMemo(
+    () => dashboardMarket === "all" ? dashboardWatchlist : dashboardWatchlist.filter((item) => marketForWatchItem(item) === dashboardMarket),
+    [dashboardMarket, dashboardWatchlist]
+  );
   const baseLatest = latestPrice(prices);
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
   const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
@@ -120,6 +127,14 @@ export default function DashboardPage() {
   const quoteCurrency = realtimeQuote?.regular.currency ?? currencyForTicker(selectedItem.stock.ticker);
   const hasExtendedPrice = Boolean(realtimeQuote?.extended?.price);
   const selectedFinanceUrl = `https://www.google.com/finance/quote/${encodeURIComponent(selectedItem.stock.ticker)}:${encodeURIComponent(selectedItem.stock.exchange)}`;
+
+  function changeDashboardMarket(nextMarket: MarketScope) {
+    setDashboardMarket(nextMarket);
+    const nextItems = nextMarket === "all" ? dashboardWatchlist : dashboardWatchlist.filter((item) => marketForWatchItem(item) === nextMarket);
+    if (nextItems.length > 0 && !nextItems.some((item) => item.stock.ticker === selectedTicker)) {
+      setSelectedTicker(nextItems[0].stock.ticker);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -202,8 +217,13 @@ export default function DashboardPage() {
     <div className="space-y-5 sm:space-y-7">
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 text-slate-950 shadow-2xl shadow-black/20">
         <div className="border-b border-slate-200 bg-white px-3 py-3 sm:px-5">
+          <div className="mb-3 flex flex-wrap gap-2">
+            <MarketFilterButton active={dashboardMarket === "all"} count={dashboardMarketCounts.all} label="すべて" onClick={() => changeDashboardMarket("all")} variant="light" />
+            <MarketFilterButton active={dashboardMarket === "us"} count={dashboardMarketCounts.us} label="米国株" onClick={() => changeDashboardMarket("us")} variant="light" />
+            <MarketFilterButton active={dashboardMarket === "jp"} count={dashboardMarketCounts.jp} label="国内株" onClick={() => changeDashboardMarket("jp")} variant="light" />
+          </div>
           <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
-            {dashboardWatchlist.map((item) => {
+            {marketFilteredWatchlist.map((item) => {
               const quote = quoteForWatchItem(item, { selectedTicker, realtimeQuote });
               return (
                 <MarketChip
@@ -212,11 +232,17 @@ export default function DashboardPage() {
                   price={quote.price}
                   change={quote.changePercent}
                   currency={currencyForTicker(item.stock.ticker)}
+                  market={marketForWatchItem(item)}
                   active={item.stock.ticker === selectedItem.stock.ticker}
                   onClick={() => setSelectedTicker(item.stock.ticker)}
                 />
               );
             })}
+            {marketFilteredWatchlist.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">
+                この市場のWatchlist銘柄はまだありません。
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -227,6 +253,7 @@ export default function DashboardPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-5xl font-black tracking-tight text-slate-950 sm:text-7xl">{selectedItem.stock.ticker}</h2>
+                    <MarketBadge market={marketForWatchItem(selectedItem)} compact variant="light" />
                     <StatusBadge value={status} />
                   </div>
                   <p className="mt-2 text-sm font-semibold text-slate-500">{selectedItem.stock.exchange} · {selectedItem.stock.companyName}</p>
@@ -401,7 +428,7 @@ export default function DashboardPage() {
         <div className="min-w-0 space-y-4">
           <SectionTitle title="Watchlist" note="銘柄をクリックすると中央の分析が切り替わります" />
           <div className="space-y-2">
-            {dashboardWatchlist.map((item) => {
+            {marketFilteredWatchlist.map((item) => {
               const quote = quoteForWatchItem(item, { selectedTicker, realtimeQuote });
               const rowStatus = item.status;
               const active = item.stock.ticker === selectedItem.stock.ticker;
@@ -416,7 +443,10 @@ export default function DashboardPage() {
                   onClick={() => setSelectedTicker(item.stock.ticker)}
                 >
                   <span className="min-w-0">
-                    <span className={active ? "block text-base font-black text-sky-100" : "block text-base font-black text-slate-100"}>{item.stock.ticker}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className={active ? "block text-base font-black text-sky-100" : "block text-base font-black text-slate-100"}>{item.stock.ticker}</span>
+                      <MarketBadge market={marketForWatchItem(item)} compact />
+                    </span>
                     <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">{shortCompanyName(item.stock.companyName)}</span>
                   </span>
                   <span className="text-right tabular-nums">
@@ -581,6 +611,7 @@ function MarketChip({
   price,
   change,
   currency,
+  market,
   active,
   onClick
 }: {
@@ -588,6 +619,7 @@ function MarketChip({
   price: number | null;
   change: number;
   currency: string;
+  market: "us" | "jp";
   active: boolean;
   onClick: () => void;
 }) {
@@ -602,7 +634,10 @@ function MarketChip({
         {change >= 0 ? "↑" : "↓"}
       </span>
       <span className="min-w-0">
-        <span className="block text-sm font-bold text-slate-950">{ticker}</span>
+        <span className="flex items-center gap-2">
+          <span className="block text-sm font-bold text-slate-950">{ticker}</span>
+          <MarketBadge market={market} compact variant="light" />
+        </span>
         <span className="block truncate text-xs text-slate-500">{price ? formatMoney(price, currency) : "-"} / <span className={change >= 0 ? "text-green-700" : "text-red-700"}>{price ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span></span>
       </span>
     </button>

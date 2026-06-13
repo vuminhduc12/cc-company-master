@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 import Link from "next/link";
 import { DataTable } from "@/components/DataTable";
+import { MarketBadge, MarketFilterButton, countWatchlistMarkets, marketForStock, marketForWatchItem, type MarketScope } from "@/components/MarketControls";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
@@ -40,6 +41,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     seededHistory
   });
   const [activeSection, setActiveSection] = useState<(typeof decisionNavItems)[number]["id"]>("conclusion");
+  const [detailMarket, setDetailMarket] = useState<MarketScope>("all");
 
   const customWatchItem = userWatchlist.items.find((row) => row.stock.ticker === normalizedTicker) ?? null;
   const watchItem = customWatchItem ?? watchlist.find((row) => row.stock.ticker === normalizedTicker) ?? null;
@@ -71,6 +73,11 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       ? resolvedPrices?.source ?? "AI Job"
       : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
   const detailItems = resolveVisibleWatchlist(userWatchlist.items);
+  const detailMarketCounts = useMemo(() => countWatchlistMarkets(detailItems), [detailItems]);
+  const marketFilteredDetailItems = useMemo(
+    () => detailMarket === "all" ? detailItems : detailItems.filter((item) => marketForWatchItem(item) === detailMarket),
+    [detailItems, detailMarket]
+  );
   const isWatchlistFallbackOnly = Boolean(watchItem && !localPrices && !activeHistoryData?.prices?.length && !live?.prices?.length);
   const chartPrices = mergedPrices;
   const tablePrices = mergedPrices.slice().reverse();
@@ -133,7 +140,10 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Stock Detail</p>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50 sm:text-4xl">{stock.ticker}</h2>
-            <p className="mt-2 text-sm text-slate-400">{stock.companyName} / {stock.exchange}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              <MarketBadge market={marketForStock(stock)} />
+              <span>{stock.companyName} / {stock.exchange}</span>
+            </div>
           </div>
           <div className="grid min-w-0 gap-2 text-left sm:grid-cols-2 sm:text-right lg:grid-cols-1">
             <div className={displayChangePercent >= 0 ? "text-sky-300" : "text-red-300"}>
@@ -149,7 +159,10 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/80 p-2 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <span className="px-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Select Stock</span>
-        {detailItems.map((row) => {
+        <MarketFilterButton active={detailMarket === "all"} count={detailMarketCounts.all} label="すべて" onClick={() => setDetailMarket("all")} />
+        <MarketFilterButton active={detailMarket === "us"} count={detailMarketCounts.us} label="米国株" onClick={() => setDetailMarket("us")} />
+        <MarketFilterButton active={detailMarket === "jp"} count={detailMarketCounts.jp} label="国内株" onClick={() => setDetailMarket("jp")} />
+        {marketFilteredDetailItems.map((row) => {
           const active = row.stock.ticker === stock.ticker;
           return (
             <Link
@@ -161,10 +174,16 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
                   : "border-white/10 bg-white/5 text-slate-300 hover:border-sky-300/30 hover:bg-sky-300/10"
               }`}
             >
-              {row.stock.ticker}
+              <span className="inline-flex items-center gap-2">
+                <span>{row.stock.ticker}</span>
+                <MarketBadge market={marketForWatchItem(row)} compact />
+              </span>
             </Link>
           );
         })}
+        {marketFilteredDetailItems.length === 0 ? (
+          <span className="px-2 text-xs font-semibold text-slate-500">この市場のWatchlist銘柄はまだありません。</span>
+        ) : null}
       </div>
       {live?.error || jobResult?.error ? (
         <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
+import { MarketBadge, MarketFilterButton, countWatchlistMarkets, marketForWatchItem, marketLabel, type MarketScope } from "@/components/MarketControls";
 import { StatusBadge } from "@/components/StatusBadge";
 import { authHeaders } from "@/lib/auth-fetch";
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
@@ -55,9 +56,15 @@ export default function WatchlistPage() {
   const [searchStatus, setSearchStatus] = useState<"idle" | "running" | "error">("idle");
   const [message, setMessage] = useState("");
   const [plan, setPlan] = useState<PlanDefinition>(planDefinitions.free);
+  const [listMarket, setListMarket] = useState<MarketScope>("all");
   const authUserId = auth.user?.id ?? "";
   const defaultTickerSet = useMemo(() => new Set(watchlist.map((item) => item.stock.ticker)), []);
   const isSyncChecking = !ready || syncMode === "checking";
+  const marketCounts = useMemo(() => countWatchlistMarkets(visibleItems), [visibleItems]);
+  const filteredItems = useMemo(
+    () => listMarket === "all" ? visibleItems : visibleItems.filter((item) => marketForWatchItem(item) === listMarket),
+    [listMarket, visibleItems]
+  );
 
   useEffect(() => {
     async function loadPlan() {
@@ -160,9 +167,12 @@ export default function WatchlistPage() {
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <WatchStat label="表示銘柄" value={isSyncChecking ? "-" : `${visibleItems.length}`} tone="default" />
-              <WatchStat label="追加銘柄" value={isSyncChecking ? "-" : `${customItems.filter((item) => !defaultTickerSet.has(item.stock.ticker)).length}`} tone="green" />
-              <WatchStat label="削除済み初期銘柄" value={isSyncChecking ? "-" : `${removedTickers.length}`} tone="yellow" />
+              <WatchStat label="米国株" value={isSyncChecking ? "-" : `${marketCounts.us}`} tone="green" />
+              <WatchStat label="国内株" value={isSyncChecking ? "-" : `${marketCounts.jp}`} tone="yellow" />
             </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              追加銘柄 {isSyncChecking ? "-" : customItems.filter((item) => !defaultTickerSet.has(item.stock.ticker)).length} / 削除済み初期銘柄 {isSyncChecking ? "-" : removedTickers.length}
+            </p>
           </div>
           <div className="border-t border-white/10 bg-slate-950/45 p-5 sm:p-6 xl:border-l xl:border-t-0">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-purple-200">Realtime Search</p>
@@ -232,9 +242,12 @@ export default function WatchlistPage() {
       <section className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
         <div>
           <h3 className="text-lg font-bold text-slate-50">銘柄一覧</h3>
-          <p className="mt-1 text-xs text-slate-500">保有情報、現在値、AI/ルールステータス、データソースを確認できます。</p>
+          <p className="mt-1 text-xs text-slate-500">市場別に絞り込みながら、現在値・判定・データソースを確認できます。</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <MarketFilterButton active={listMarket === "all"} count={marketCounts.all} label="すべて" onClick={() => setListMarket("all")} />
+          <MarketFilterButton active={listMarket === "us"} count={marketCounts.us} label="米国株" onClick={() => setListMarket("us")} />
+          <MarketFilterButton active={listMarket === "jp"} count={marketCounts.jp} label="国内株" onClick={() => setListMarket("jp")} />
           <button
             className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-xs font-black text-sky-100 hover:bg-sky-300/20 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isSyncChecking || refreshStatus === "running" || visibleItems.length === 0}
@@ -276,22 +289,29 @@ export default function WatchlistPage() {
 
       {isSyncChecking ? (
         <WatchlistSyncSkeleton />
+      ) : filteredItems.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-slate-900/82 p-5 text-sm leading-6 text-slate-300 shadow-lg shadow-black/20 ring-1 ring-white/5">
+          {listMarket === "all" ? "Watchlist銘柄はまだありません。" : `${marketLabel(listMarket)}のWatchlist銘柄はまだありません。上の検索から追加できます。`}
+        </div>
       ) : (
         <>
           <div className="space-y-3 md:hidden">
-            {visibleItems.map((item) => <WatchlistMobileCard key={item.stock.ticker} item={item} onDelete={deleteTicker} />)}
+            {filteredItems.map((item) => <WatchlistMobileCard key={item.stock.ticker} item={item} onDelete={deleteTicker} />)}
           </div>
           <div className="hidden md:block">
             <DataTable
               headers={["Ticker", "会社名", "市場", "現在値", "前日比", "スコア", "ステータス", "ソース", "メモ", "操作"]}
-              rows={visibleItems.map((item) => {
+              rows={filteredItems.map((item) => {
                 const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
                 return [
-                  <Link key="ticker" className="font-bold text-sky-300 hover:text-sky-200" href={`/stocks/${item.stock.ticker}`}>
-                    {item.stock.ticker}
-                  </Link>,
+                  <div key="ticker" className="flex flex-col gap-1">
+                    <Link className="font-bold text-sky-300 hover:text-sky-200" href={`/stocks/${item.stock.ticker}`}>
+                      {item.stock.ticker}
+                    </Link>
+                    <MarketBadge market={marketForWatchItem(item)} compact />
+                  </div>,
                   item.stock.companyName,
-                  item.stock.exchange,
+                  <span key="exchange" className="font-semibold text-slate-300">{item.stock.exchange}</span>,
                   formatPrice(item.stock.ticker, item.currentPrice),
                   <span key="change" className={change >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>{change ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span>,
                   item.score ?? "-",
@@ -368,14 +388,18 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
 
 function WatchlistMobileCard({ item, onDelete }: { item: CustomWatchItem; onDelete: (ticker: string) => void }) {
   const change = item.previousClose > 0 ? ((item.currentPrice - item.previousClose) / item.previousClose) * 100 : 0;
+  const itemMarket = marketForWatchItem(item);
 
   return (
-    <article className="rounded-2xl border border-white/10 bg-slate-900/82 p-4 shadow-lg shadow-black/20 ring-1 ring-white/5">
+    <article className={`rounded-2xl border bg-slate-900/82 p-4 shadow-lg shadow-black/20 ring-1 ring-white/5 ${itemMarket === "jp" ? "border-amber-300/20" : "border-cyan-300/20"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link className="text-lg font-black text-sky-200" href={`/stocks/${item.stock.ticker}`}>
-            {item.stock.ticker}
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link className="text-lg font-black text-sky-200" href={`/stocks/${item.stock.ticker}`}>
+              {item.stock.ticker}
+            </Link>
+            <MarketBadge market={itemMarket} />
+          </div>
           <p className="mt-1 truncate text-sm text-slate-300">{item.stock.companyName}</p>
           <p className="mt-1 text-xs text-slate-500">{item.stock.exchange} / {item.source ?? "-"}</p>
         </div>
