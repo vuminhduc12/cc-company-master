@@ -104,6 +104,9 @@ create table if not exists public.job_runs (
   created_at timestamptz not null default now()
 );
 
+create index if not exists job_runs_created_at_idx
+  on public.job_runs (created_at desc);
+
 create table if not exists public.ai_usage_logs (
   id uuid primary key default gen_random_uuid(),
   user_id text not null default 'local-user',

@@ -3,6 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AiJobResult, DailyPrice, NewsItem } from "@/types";
 
 let browserSupabase: SupabaseClient | null = null;
+const jobRunPriceSnapshotLimit = 260;
+const jobRunNewsSnapshotLimit = 60;
+const jobRunStockNewsSnapshotLimit = 12;
 
 export function hasSupabaseConfig() {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -187,6 +190,7 @@ export async function saveJobResult(result: AiJobResult) {
   }, { onConflict: "report_date" });
   if (reportError) throw new Error(`Supabase daily_reports save failed: ${reportError.message}`);
 
+  const compactResult = compactJobResultForRun(result);
   const { error: runError } = await supabase.from("job_runs").insert({
     status: result.status,
     mode: result.mode,
@@ -196,11 +200,23 @@ export async function saveJobResult(result: AiJobResult) {
     ai_market_score: result.aiMarketScore,
     error: result.error,
     warning: result.warning,
-    result
+    result: compactResult
   });
-  if (runError) throw new Error(`Supabase job_runs save failed: ${runError.message}`);
+  if (runError) return { saved: false, reason: `Supabase job_runs save failed: ${runError.message}` };
 
   return { saved: true };
+}
+
+function compactJobResultForRun(result: AiJobResult): AiJobResult {
+  return {
+    ...result,
+    news: result.news.slice(0, jobRunNewsSnapshotLimit),
+    stocks: result.stocks?.map((stock) => ({
+      ...stock,
+      prices: stock.prices.slice(-jobRunPriceSnapshotLimit),
+      news: stock.news.slice(0, jobRunStockNewsSnapshotLimit)
+    }))
+  };
 }
 
 type NewsRow = {
