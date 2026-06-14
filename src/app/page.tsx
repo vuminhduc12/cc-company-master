@@ -14,7 +14,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { StockChart } from "@/components/StockChart";
 import { resolveAiJobAudit } from "@/lib/ai-job-audit";
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
-import { latestPrice, mergeRealtimeDailyPrice, resolvePriceSeries, volumeRatio } from "@/lib/indicators";
+import { latestPrice, mergeRealtimeDailyPrice, resolvePriceSeries, validateDailyPriceSeries, volumeRatio } from "@/lib/indicators";
 import { aiTasks, news, prices, pricesByTicker, report, watchlist } from "@/lib/mock-data";
 import { analyzeStock, statusFromScore } from "@/lib/scoring";
 import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
@@ -104,7 +104,9 @@ export default function DashboardPage() {
     ?? selectedCustomItem?.latestPrice
     ?? null;
   const resolvedPrices = resolvePriceSeries(selectedBasePrices, selectedLive?.prices ?? activeHistoryData?.prices, selectedLivePrice);
-  const chartPrices = mergeRealtimeDailyPrice(resolvedPrices.prices, realtimeQuote);
+  const rawChartPrices = mergeRealtimeDailyPrice(resolvedPrices.prices, realtimeQuote, selectedItem.stock.ticker);
+  const priceValidation = validateDailyPriceSeries(rawChartPrices, selectedItem.stock.ticker);
+  const chartPrices = priceValidation.prices.length ? priceValidation.prices : rawChartPrices;
   const latest = chartPrices[chartPrices.length - 1] ?? baseLatest;
   const selectedNews = selectedLive?.news?.length
     ? selectedLive.news
@@ -378,6 +380,12 @@ export default function DashboardPage() {
       {resolvedPrices.rejectedLive ? (
         <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
           Data Warning: APIから取得した{selectedItem.stock.ticker}価格がローカル検証済み履歴と大きく異なるため、画面ではローカル履歴を優先表示しています。
+        </section>
+      ) : null}
+      {priceValidation.issues.length ? (
+        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
+          Data Quality Warning: {selectedItem.stock.ticker}の日足データを検証し、{priceValidation.issues.length}件の不整合を除外/補正しました。
+          <span className="mt-1 block text-xs text-yellow-200/80">{priceValidation.issues[0].message}</span>
         </section>
       ) : null}
       {activeHistoryData?.warning ? (

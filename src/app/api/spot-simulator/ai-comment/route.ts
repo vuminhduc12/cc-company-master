@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
 import { buildSpotSimulatorPrompt, getOpenAiModel } from "@/lib/ai-prompts";
-import { mergePriceSeries } from "@/lib/indicators";
+import { mergePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
 import { getPricesForTicker } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzePatternSimilarity } from "@/lib/pattern-similarity";
@@ -337,7 +337,9 @@ async function buildRealtimeContext(
 
   const dailyData = dailyResult.status === "fulfilled" ? dailyResult.value : null;
   const localPrices = getPricesForTicker(stock.ticker) ?? [];
-  const mergedPrices = mergePriceSeries(localPrices, dailyData?.prices ?? []);
+  const rawMergedPrices = mergePriceSeries(localPrices, dailyData?.prices ?? []);
+  const validation = validateDailyPriceSeries(rawMergedPrices, stock.ticker);
+  const mergedPrices = validation.prices.length ? validation.prices : rawMergedPrices;
   const latestDaily = mergedPrices.at(-1) ?? dailyData?.prices.at(-1);
   const quote = quoteResult.status === "fulfilled"
     ? quoteResult.value

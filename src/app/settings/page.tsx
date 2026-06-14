@@ -10,7 +10,7 @@ import { aiTasks, news, prices, report } from "@/lib/mock-data";
 import { planDefinitions, type PlanDefinition } from "@/lib/plans";
 import { scoreStock } from "@/lib/scoring";
 import { useUserWatchlist } from "@/lib/user-watchlist";
-import type { AiJobResult } from "@/types";
+import type { AiJobResult, Stock, WatchlistItem } from "@/types";
 
 const storageKey = "d-finance-ai-job-result";
 const settingsStorageKey = "dfinance.settings.v1";
@@ -111,8 +111,15 @@ export default function SettingsPage() {
   }
 
   async function runAiJob() {
+    const targetStocks = parseManualJobStocks(appSettings.watchlistText, userWatchlist.items);
+    if (targetStocks.length === 0) {
+      setStatus("error");
+      setMessage("AI Jobは実行されませんでした。\n原因: Settingsの監視銘柄が空、または有効な銘柄コードがありません。\n例: RGTI, SIDU, IONQ, 6693.T");
+      return;
+    }
+
     setStatus("running");
-    setMessage("AI社員が今日の仕事を実行中です。");
+    setMessage(`AI社員が今日の仕事を実行中です。対象: ${targetStocks.map((stock) => stock.ticker).join(", ")}`);
     const previousStoredResult = localStorage.getItem(storageKey);
     const latest = prices[prices.length - 1];
     const now = new Date().toLocaleString("ja-JP");
@@ -140,7 +147,7 @@ export default function SettingsPage() {
           ...(cronSecret ? { "x-cron-secret": cronSecret } : {})
         },
         body: JSON.stringify({
-          watchlist: userWatchlist.items.map((item) => item.stock)
+          watchlist: targetStocks
         })
       });
       const result = await response.json() as AiJobResult;
@@ -231,6 +238,9 @@ export default function SettingsPage() {
             value={appSettings.watchlistText}
             onChange={(event) => setAppSettings((current) => ({ ...current, watchlistText: event.target.value }))}
           />
+          <span className="mt-2 block text-xs leading-5 text-slate-500">
+            Manual AI Jobはここに入力した銘柄だけ更新します。例: RGTI, SIDU, IONQ, 6693.T
+          </span>
         </label>
         <label className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-sm text-slate-300 shadow-xl shadow-black/20 ring-1 ring-white/5">
           AI分析の強さ
@@ -415,6 +425,36 @@ function PlanLimit({ label, value }: { label: string; value: string }) {
       <span className="text-sm font-black text-slate-100">{value}</span>
     </div>
   );
+}
+
+function parseManualJobStocks(value: string, watchlistItems: WatchlistItem[]): Stock[] {
+  const existingStocks = new Map(watchlistItems.map((item) => [item.stock.ticker, item.stock]));
+  const seen = new Set<string>();
+  return value
+    .split(/[\s,、]+/)
+    .map((ticker) => normalizeManualJobTicker(ticker))
+    .filter((ticker) => ticker && /^[A-Z0-9.-]{1,12}$/.test(ticker))
+    .flatMap((ticker): Stock[] => {
+      if (seen.has(ticker)) return [];
+      seen.add(ticker);
+      const existing = existingStocks.get(ticker);
+      if (existing) return [existing];
+      const isJapanese = /^\d{4}\.T$/i.test(ticker);
+      return [{
+        ticker,
+        companyName: ticker,
+        sector: isJapanese ? "Japan Equity" : "US Equity",
+        exchange: isJapanese ? "TSE" : "NASDAQ/NYSE"
+      }];
+    });
+}
+
+function normalizeManualJobTicker(value: string) {
+  const ticker = value.trim().toUpperCase();
+  if (!ticker) return "";
+  if (/^\d{4}$/.test(ticker)) return `${ticker}.T`;
+  if (/^\d{4}\.JP$/i.test(ticker)) return ticker.replace(/\.JP$/i, ".T");
+  return ticker;
 }
 
 function formatAiJobError(message: string) {

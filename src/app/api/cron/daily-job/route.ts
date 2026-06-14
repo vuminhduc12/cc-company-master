@@ -201,7 +201,8 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
   const key = process.env.NEWS_API_KEY;
   const ticker = stock.ticker;
   const savedNews = await loadSavedNewsForTicker(ticker);
-  if (!key) return savedNews.length ? savedNews : mockNews.filter((item) => item.ticker === ticker || ticker === "RGTI");
+  const localNews = mockNews.filter((item) => item.ticker === ticker || ticker === "RGTI");
+  if (!key) return savedNews.length ? savedNews : localNews;
 
   const from = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const query = `("${stock.companyName}" OR ${ticker} OR "${stock.exchange}:${ticker}" OR "${ticker} stock") AND (stock OR shares OR earnings OR partnership OR contract OR offering OR analyst OR revenue OR launch)`;
@@ -214,10 +215,22 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
     apiKey: key
   });
   const url = `https://newsapi.org/v2/everything?${params.toString()}`;
-  const response = await fetch(url, { next: { revalidate: 0 } });
+  const response = await fetch(url, { next: { revalidate: 0 } }).catch((error) => {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return {
+      ok: false,
+      status: 0,
+      json: async () => ({ articles: [], error: message })
+    } as Response;
+  });
   if (!response.ok) {
     if (savedNews.length) return savedNews;
-    throw new Error(`News API error: ${response.status}`);
+    if (localNews.length) return localNews.map((item) => ({
+      ...item,
+      ticker,
+      aiComment: `News API error ${response.status}のため、保存済みまたはローカルニュースを使った簡易分析に切り替えました。`
+    }));
+    return [];
   }
 
   const payload = await response.json() as { articles?: Array<{ title?: string; url?: string; source?: { name?: string }; publishedAt?: string; description?: string; content?: string }> };
@@ -240,12 +253,25 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
     opportunity: "AI分析待ち",
     aiComment: "OpenAIで日本語分析します。"
   }));
-  return newsItems.length ? newsItems : savedNews;
+  if (newsItems.length) return newsItems;
+  if (savedNews.length) return savedNews;
+  return localNews.map((item) => ({
+    ...item,
+    ticker,
+    aiComment: "News APIで新しい記事が見つからなかったため、ローカルニュースを使った簡易分析に切り替えました。"
+  }));
 }
 
 async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock, aiUserId: string): Promise<NewsItem[]> {
   return Promise.all(items.map(async (item) => {
-    const analysis = await analyzeOneNews(item, price, stock, aiUserId);
+    const analysis = await analyzeOneNews(item, price, stock, aiUserId).catch((error) => {
+      const fallback = ruleBasedAnalysis(item, price);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return {
+        ...fallback,
+        aiComment: `${fallback.aiComment} OpenAI分析中にエラーが発生したため、ルールベース分析に切り替えました。${message}`
+      };
+    });
     return {
       ...item,
       sentiment: analysis.sentiment,

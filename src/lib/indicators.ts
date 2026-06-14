@@ -1,5 +1,16 @@
 import type { DailyPrice } from "@/types";
 
+export type DailyPriceValidationIssue = {
+  code: "duplicate_date" | "invalid_date" | "weekend_date" | "future_date" | "invalid_ohlc" | "extreme_jump";
+  date?: string;
+  message: string;
+};
+
+export type DailyPriceValidationResult = {
+  prices: DailyPrice[];
+  issues: DailyPriceValidationIssue[];
+};
+
 export type RealtimeQuoteSnapshot = {
   regular: {
     price: number;
@@ -29,18 +40,18 @@ export function mergePriceSeries(localPrices: DailyPrice[], livePrices?: DailyPr
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function mergeRealtimeDailyPrice(prices: DailyPrice[], quote: RealtimeQuoteSnapshot | null | undefined) {
+export function mergeRealtimeDailyPrice(prices: DailyPrice[], quote: RealtimeQuoteSnapshot | null | undefined, ticker?: string) {
   if (!quote) return prices;
-  const row = dailyPriceFromRealtimeQuote(prices, quote);
+  const row = dailyPriceFromRealtimeQuote(prices, quote, ticker);
   if (!row) return prices;
   return mergeLatestPrice(prices, row);
 }
 
-export function dailyPriceFromRealtimeQuote(prices: DailyPrice[], quote: RealtimeQuoteSnapshot): DailyPrice | null {
+export function dailyPriceFromRealtimeQuote(prices: DailyPrice[], quote: RealtimeQuoteSnapshot, ticker?: string): DailyPrice | null {
   const close = quote.regular.price;
   if (!Number.isFinite(close) || close <= 0) return null;
 
-  const date = dateFromIsoInTokyo(quote.regular.asOf);
+  const date = dateFromIsoInExchangeTimezone(quote.regular.asOf, ticker);
   const previous = latestPrice(prices);
   if (previous && date < previous.date) return null;
 
@@ -109,12 +120,97 @@ export function volumeRatio(price: DailyPrice) {
   return price.volumeRatio || (price.volumeAverage > 0 ? price.volume / price.volumeAverage : 0);
 }
 
-function dateFromIsoInTokyo(iso: string) {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
+export function validateDailyPriceSeries(prices: DailyPrice[], ticker?: string): DailyPriceValidationResult {
+  const issues: DailyPriceValidationIssue[] = [];
+  const timeZone = exchangeTimeZoneForTicker(ticker);
+  const exchangeToday = new Date().toLocaleDateString("en-CA", { timeZone });
+  const byDate = new Map<string, DailyPrice>();
+
+  for (const price of prices) {
+    if (!isValidDateString(price.date)) {
+      issues.push({ code: "invalid_date", date: price.date, message: `${price.date || "unknown"}: 日付形式が不正なため除外しました。` });
+      continue;
+    }
+    if (price.date > exchangeToday) {
+      issues.push({ code: "future_date", date: price.date, message: `${price.date}: 市場日付より未来のため除外しました。` });
+      continue;
+    }
+    if (isWeekendDate(price.date, timeZone)) {
+      issues.push({ code: "weekend_date", date: price.date, message: `${price.date}: 株式市場の週末日付のため除外しました。` });
+      continue;
+    }
+    if (!hasValidOhlc(price)) {
+      issues.push({ code: "invalid_ohlc", date: price.date, message: `${price.date}: OHLC価格の整合性が不正なため除外しました。` });
+      continue;
+    }
+    if (byDate.has(price.date)) {
+      issues.push({ code: "duplicate_date", date: price.date, message: `${price.date}: 同じ日付のデータが重複したため、後から取得した行を優先しました。` });
+    }
+    byDate.set(price.date, price);
   }
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(parsed);
+
+  const sorted = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const validated: DailyPrice[] = [];
+  for (const price of sorted) {
+    const previous = validated.at(-1);
+    if (previous && isExtremeCloseJump(previous.close, price.close)) {
+      issues.push({
+        code: "extreme_jump",
+        date: price.date,
+        message: `${price.date}: 前営業日比で価格が大きく乖離したため除外しました。株式分割などの場合はデータを再取得してください。`
+      });
+      continue;
+    }
+    validated.push(normalizeDerivedPrice(price, previous));
+  }
+
+  return { prices: validated, issues };
+}
+
+function dateFromIsoInExchangeTimezone(iso: string, ticker?: string) {
+  const parsed = new Date(iso);
+  const timeZone = exchangeTimeZoneForTicker(ticker);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toLocaleDateString("en-CA", { timeZone });
+  }
+  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(parsed);
+}
+
+function exchangeTimeZoneForTicker(ticker?: string) {
+  return ticker && /^\d{4}\.T$/i.test(ticker) ? "Asia/Tokyo" : "America/New_York";
+}
+
+function isValidDateString(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function isWeekendDate(value: string, timeZone: string) {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(new Date(`${value}T12:00:00Z`));
+  return weekday === "Sat" || weekday === "Sun";
+}
+
+function hasValidOhlc(price: DailyPrice) {
+  const values = [price.open, price.high, price.low, price.close];
+  if (!values.every((value) => Number.isFinite(value) && value > 0)) return false;
+  return price.high >= Math.max(price.open, price.close) && price.low <= Math.min(price.open, price.close) && price.high >= price.low;
+}
+
+function isExtremeCloseJump(previousClose: number, close: number) {
+  if (previousClose <= 0 || close <= 0) return false;
+  const ratio = close / previousClose;
+  return ratio > 3 || ratio < 0.33;
+}
+
+function normalizeDerivedPrice(price: DailyPrice, previous?: DailyPrice): DailyPrice {
+  if (!previous || previous.close <= 0) return price;
+  const changePercent = ((price.close - previous.close) / previous.close) * 100;
+  if (Math.abs(changePercent - price.changePercent) < 0.25) return price;
+  return {
+    ...price,
+    changePercent
+  };
 }
 
 function shouldUseLivePrice(localLatest: DailyPrice | undefined, liveLatest: DailyPrice) {

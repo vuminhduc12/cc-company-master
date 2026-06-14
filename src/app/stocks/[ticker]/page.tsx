@@ -9,7 +9,7 @@ import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
 import { StockChart } from "@/components/StockChart";
-import { mergeRealtimeDailyPrice, resolvePriceSeries } from "@/lib/indicators";
+import { mergeRealtimeDailyPrice, resolvePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
 import { analyzePatternSimilarity, type PatternHorizon } from "@/lib/pattern-similarity";
 import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
@@ -59,7 +59,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const cachedHistory = userWatchlist.getTickerHistory(stock.ticker);
   const basePrices = activeHistoryData?.prices ?? cachedHistory?.prices ?? customWatchItem?.priceHistory ?? localPrices ?? live?.prices ?? (watchItem ? [latestPriceFromWatchItem(watchItem)] : []);
   const resolvedPrices = basePrices.length ? resolvePriceSeries(basePrices, live?.prices ?? activeHistoryData?.prices, livePrice) : null;
-  const mergedPrices = mergeRealtimeDailyPrice(resolvedPrices?.prices ?? emptyDailyPrices, realtimeQuote);
+  const rawMergedPrices = mergeRealtimeDailyPrice(resolvedPrices?.prices ?? emptyDailyPrices, realtimeQuote, stock.ticker);
+  const priceValidation = validateDailyPriceSeries(rawMergedPrices, stock.ticker);
+  const mergedPrices = priceValidation.prices;
   const latest = mergedPrices.at(-1);
   const displayClose = realtimeQuote?.regular.price ?? latest?.close;
   const displayChangePercent = realtimeQuote?.regular.changePercent ?? latest?.changePercent ?? 0;
@@ -206,6 +208,16 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       {resolvedPrices?.rejectedLive ? (
         <div className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
           Data Warning: APIから取得した{stock.ticker}価格がローカル検証済み履歴と大きく異なるため、テーブルとチャートではローカル履歴を優先表示しています。
+        </div>
+      ) : null}
+      {priceValidation.issues.length ? (
+        <div className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
+          Data Quality Warning: 日足データを検証し、{priceValidation.issues.length}件の不整合を除外/補正しました。
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {priceValidation.issues.slice(0, 3).map((issue, index) => (
+              <li key={`${issue.code}-${issue.date ?? index}`}>{issue.message}</li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
