@@ -25,6 +25,21 @@ type AiRiskComment = {
   dataFreshness?: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  marketView?: {
+    scenario: "upside" | "range" | "downside";
+    confidence: "低" | "中" | "高";
+    topEvidence: string[];
+  };
+  historicalPatternView?: string;
+  newsImpactView?: string;
+  scenarioForecast?: {
+    oneToTwoWeeks: string;
+    oneToThreeMonths: string;
+    upsideTrigger: string;
+    downsideInvalidation: string;
+    dangerLevel: string;
+  };
+  riskFilter?: string;
   analystView?: string;
   scenarioPrediction?: string;
   userQuestionAnswer?: string;
@@ -520,6 +535,46 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
           <p className="mt-1 text-xs leading-5 text-slate-400">{comment.dataFreshness}</p>
         </div>
       ) : null}
+      {comment.marketView ? (
+        <div className="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-bold text-emerald-100">市場見立て</p>
+            <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">
+              {scenarioLabel(comment.marketView.scenario)}
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-slate-200">
+              信頼度 {comment.marketView.confidence}
+            </span>
+          </div>
+          <ul className="mt-3 space-y-1 text-xs leading-5 text-slate-300">
+            {comment.marketView.topEvidence.map((item) => <li key={item}>・{item}</li>)}
+          </ul>
+        </div>
+      ) : null}
+      {(comment.historicalPatternView || comment.newsImpactView) ? (
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {comment.historicalPatternView ? <AiText label="過去データ傾向" value={comment.historicalPatternView} /> : null}
+          {comment.newsImpactView ? <AiText label="ニュース影響" value={comment.newsImpactView} /> : null}
+        </div>
+      ) : null}
+      {comment.scenarioForecast ? (
+        <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.06] p-4">
+          <p className="text-xs font-bold text-sky-100">条件付きシナリオ</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <ScenarioLine label="1〜2週間" value={comment.scenarioForecast.oneToTwoWeeks} />
+            <ScenarioLine label="1〜3か月" value={comment.scenarioForecast.oneToThreeMonths} />
+            <ScenarioLine label="上昇条件" value={comment.scenarioForecast.upsideTrigger} />
+            <ScenarioLine label="下落無効化" value={comment.scenarioForecast.downsideInvalidation} />
+          </div>
+          {comment.scenarioForecast.dangerLevel ? <p className="mt-3 text-xs font-bold text-red-200">危険ライン: {comment.scenarioForecast.dangerLevel}</p> : null}
+        </div>
+      ) : null}
+      {comment.riskFilter ? (
+        <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
+          <p className="text-xs font-bold text-amber-100">最終リスクフィルター</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.riskFilter}</p>
+        </div>
+      ) : null}
       {comment.analystView ? (
         <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
           <p className="text-xs font-bold text-amber-100">上級者見立て</p>
@@ -584,6 +639,21 @@ function AiText({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-xs leading-5 text-slate-400">{value}</p>
     </div>
   );
+}
+
+function ScenarioLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-slate-950/35 p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-200/80">{label}</p>
+      <p className="mt-1 text-xs leading-5 text-slate-300">{value}</p>
+    </div>
+  );
+}
+
+function scenarioLabel(scenario: "upside" | "range" | "downside") {
+  if (scenario === "upside") return "上昇寄り";
+  if (scenario === "downside") return "下落警戒";
+  return "レンジ/中立";
 }
 
 function toneColor(tone: "default" | "up" | "down" | "warn") {

@@ -39,6 +39,21 @@ type AiRiskComment = {
   dataFreshness: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  marketView?: {
+    scenario: "upside" | "range" | "downside";
+    confidence: "低" | "中" | "高";
+    topEvidence: string[];
+  };
+  historicalPatternView?: string;
+  newsImpactView?: string;
+  scenarioForecast?: {
+    oneToTwoWeeks: string;
+    oneToThreeMonths: string;
+    upsideTrigger: string;
+    downsideInvalidation: string;
+    dangerLevel: string;
+  };
+  riskFilter?: string;
   analystView?: string;
   scenarioPrediction?: string;
   userQuestionAnswer?: string;
@@ -243,6 +258,11 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
       dataFreshness: stringOr(parsed.dataFreshness, fallback.dataFreshness),
       riskLevel: parsed.riskLevel === "低" || parsed.riskLevel === "中" || parsed.riskLevel === "高" ? parsed.riskLevel : fallback.riskLevel,
       confidence: parsed.confidence === "低" || parsed.confidence === "中" || parsed.confidence === "高" ? parsed.confidence : fallback.confidence,
+      marketView: marketViewOr(parsed.marketView, fallback.marketView),
+      historicalPatternView: stringOr(parsed.historicalPatternView, fallback.historicalPatternView ?? ""),
+      newsImpactView: stringOr(parsed.newsImpactView, fallback.newsImpactView ?? ""),
+      scenarioForecast: scenarioForecastOr(parsed.scenarioForecast, fallback.scenarioForecast),
+      riskFilter: stringOr(parsed.riskFilter, fallback.riskFilter ?? ""),
       analystView: stringOr(parsed.analystView, fallback.analystView ?? ""),
       scenarioPrediction: stringOr(parsed.scenarioPrediction, fallback.scenarioPrediction ?? ""),
       userQuestionAnswer: stringOr(parsed.userQuestionAnswer, fallback.userQuestionAnswer ?? ""),
@@ -277,6 +297,11 @@ function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input
     dataFreshness: `価格: ${realtime.quote.source} ${formatDateTime(realtime.quote.asOf)} / 日足: ${realtime.technical.source} ${realtime.technical.latestDailyDate} / 為替: ${realtime.fx.source} ${formatDateTime(realtime.fx.asOf)}`,
     riskLevel: ruleRisk.level,
     confidence: realtime.quote.source.includes("fallback") || realtime.technical.source === "fallback" ? "低" : realtime.news.length ? "中" : "低",
+    marketView: diagnosisMode === "detailed" ? buildFallbackMarketView(realtime, ruleRisk) : undefined,
+    historicalPatternView: diagnosisMode === "detailed" ? buildFallbackHistoricalPatternView(realtime) : undefined,
+    newsImpactView: diagnosisMode === "detailed" ? buildFallbackNewsImpactView(realtime) : undefined,
+    scenarioForecast: diagnosisMode === "detailed" ? buildFallbackScenarioForecast(input, realtime) : undefined,
+    riskFilter: diagnosisMode === "detailed" ? buildFallbackRiskFilter(stock, realtime, ruleRisk) : undefined,
     analystView: diagnosisMode === "detailed" ? buildFallbackAnalystView(stock, input, realtime, ruleRisk) : undefined,
     scenarioPrediction: diagnosisMode === "detailed" ? buildFallbackScenarioPrediction(stock, input, realtime, ruleRisk) : undefined,
     userQuestionAnswer: userQuestion ? buildFallbackUserQuestionAnswer(userQuestion, stock, input, simulation, realtime, ruleRisk) : undefined,
@@ -578,6 +603,88 @@ function stringArrayOr(value: unknown, fallback: string[] | undefined) {
   if (!Array.isArray(value)) return fallback;
   const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 6);
   return items.length ? items : fallback;
+}
+
+function marketViewOr(value: unknown, fallback: AiRiskComment["marketView"]): AiRiskComment["marketView"] {
+  if (!value || typeof value !== "object") return fallback;
+  const row = value as Partial<NonNullable<AiRiskComment["marketView"]>>;
+  const scenario = row.scenario === "upside" || row.scenario === "range" || row.scenario === "downside" ? row.scenario : fallback?.scenario;
+  const confidence = row.confidence === "低" || row.confidence === "中" || row.confidence === "高" ? row.confidence : fallback?.confidence;
+  const topEvidence = stringArrayOr(row.topEvidence, fallback?.topEvidence)?.slice(0, 3);
+  if (!scenario || !confidence || !topEvidence?.length) return fallback;
+  return { scenario, confidence, topEvidence };
+}
+
+function scenarioForecastOr(value: unknown, fallback: AiRiskComment["scenarioForecast"]): AiRiskComment["scenarioForecast"] {
+  if (!value || typeof value !== "object") return fallback;
+  const row = value as Partial<NonNullable<AiRiskComment["scenarioForecast"]>>;
+  return {
+    oneToTwoWeeks: stringOr(row.oneToTwoWeeks, fallback?.oneToTwoWeeks ?? ""),
+    oneToThreeMonths: stringOr(row.oneToThreeMonths, fallback?.oneToThreeMonths ?? ""),
+    upsideTrigger: stringOr(row.upsideTrigger, fallback?.upsideTrigger ?? ""),
+    downsideInvalidation: stringOr(row.downsideInvalidation, fallback?.downsideInvalidation ?? ""),
+    dangerLevel: stringOr(row.dangerLevel, fallback?.dangerLevel ?? "")
+  };
+}
+
+function buildFallbackMarketView(realtime: Awaited<ReturnType<typeof buildRealtimeContext>>, ruleRisk: RuleRisk): NonNullable<AiRiskComment["marketView"]> {
+  const currency = realtime.quote.currency === "JPY" ? "JPY" : "USD";
+  const aboveMa20 = realtime.quote.price >= realtime.technical.ma20;
+  const aboveMa50 = realtime.quote.price >= realtime.technical.ma50;
+  const positiveNews = realtime.news.filter((item) => item.sentiment === "Positive").length;
+  const negativeNews = realtime.news.filter((item) => item.sentiment === "Negative").length;
+  const pattern10 = realtime.patternSimilarity.horizons.find((item) => item.days === 10);
+  const scenario = aboveMa20 && aboveMa50 && positiveNews >= negativeNews
+    ? "upside"
+    : !aboveMa20 && negativeNews > positiveNews
+      ? "downside"
+      : "range";
+  const confidence = ruleRisk.level === "高" || !pattern10?.sampleCount ? "低" : realtime.news.length ? "中" : "低";
+  return {
+    scenario,
+    confidence,
+    topEvidence: [
+      `現在値はMA20 ${formatNative(realtime.technical.ma20, currency)}、MA50 ${formatNative(realtime.technical.ma50, currency)}との位置関係で${aboveMa20 && aboveMa50 ? "上向き" : aboveMa20 ? "中立" : "弱め"}です。`,
+      pattern10?.sampleCount ? `10営業日類似は平均${formatSignedPercent(pattern10.averageReturn)}、上昇確率${pattern10.winRate.toFixed(0)}%です。` : "類似パターンのサンプルが少なく、統計根拠は限定的です。",
+      realtime.news.length ? `ニュースはPositive ${positiveNews}件、Negative ${negativeNews}件で、材料の偏りを確認できます。` : "ニュースが不足しており、材料面の確認が弱いです。"
+    ]
+  };
+}
+
+function buildFallbackHistoricalPatternView(realtime: Awaited<ReturnType<typeof buildRealtimeContext>>) {
+  const horizons = realtime.patternSimilarity.horizons
+    .filter((item) => item.sampleCount)
+    .map((item) => `${item.days}営業日: 平均${formatSignedPercent(item.averageReturn)} / 中央${formatSignedPercent(item.medianReturn)} / 上昇確率${item.winRate.toFixed(0)}% / 範囲${formatSignedPercent(item.minReturn)}〜${formatSignedPercent(item.maxReturn)}`)
+    .join("。");
+  return horizons
+    ? `過去類似パターンでは、${horizons}。平均がプラスでも最小値が深い場合は、上昇期待より値幅リスクを優先して見ます。`
+    : "過去類似パターンはサンプル不足です。今回の方向判断はMA、出来高、ニュース鮮度を優先します。";
+}
+
+function buildFallbackNewsImpactView(realtime: Awaited<ReturnType<typeof buildRealtimeContext>>) {
+  if (!realtime.news.length) return "ニュースが十分に取得できていないため、上昇材料・下落材料の判断は低信頼です。ニュースなしではなく未取得として扱います。";
+  const strongest = realtime.news.slice().sort((a, b) => b.impactScore - a.impactScore)[0];
+  const positive = realtime.news.filter((item) => item.sentiment === "Positive").length;
+  const negative = realtime.news.filter((item) => item.sentiment === "Negative").length;
+  const bias = positive > negative ? "上昇材料寄り" : negative > positive ? "下落リスク寄り" : "中立材料寄り";
+  return `取得ニュースは${bias}です。最も影響度が高い材料は「${strongest.title}」で、センチメントは${strongest.sentiment}、影響度は${strongest.impactScore}です。ただし価格に織り込み済みかは出来高と高値更新の有無で確認します。`;
+}
+
+function buildFallbackScenarioForecast(input: SpotSimulationInput, realtime: Awaited<ReturnType<typeof buildRealtimeContext>>): NonNullable<AiRiskComment["scenarioForecast"]> {
+  const support = Math.min(realtime.technical.recentLow20 || realtime.quote.price, realtime.technical.ma20 || realtime.quote.price);
+  const resistance = realtime.technical.recentHigh20 || realtime.quote.price;
+  const nextResistance = Math.max(realtime.technical.recentHigh60 || resistance, resistance);
+  return {
+    oneToTwoWeeks: `${formatNative(support, input.currency)}〜${formatNative(resistance, input.currency)}のレンジ内で、出来高を伴う方向確認が優先です。`,
+    oneToThreeMonths: `${formatNative(resistance, input.currency)}を維持してニュース材料が続く場合、${formatNative(nextResistance, input.currency)}再挑戦が条件付きシナリオです。`,
+    upsideTrigger: `${formatNative(resistance, input.currency)}を終値で上回り、出来高倍率が1倍超を維持すること。`,
+    downsideInvalidation: `${formatNative(support, input.currency)}を出来高増で割り、終値で戻せないこと。`,
+    dangerLevel: formatNative(support, input.currency)
+  };
+}
+
+function buildFallbackRiskFilter(stock: Stock, realtime: Awaited<ReturnType<typeof buildRealtimeContext>>, ruleRisk: RuleRisk) {
+  return `最終リスクフィルターでは、Rule 1は${ruleRisk.level}リスクで元本保全を優先、Rule 2は${stock.companyName}の収益構造・利益持続性を追加確認するまで信頼度を上げすぎない、Rule 3は価格が支持線/抵抗線のどちらを抜けるか待つ忍耐が必要です。主な注意点は${ruleRisk.reasons.join("、") || "データ鮮度と執行価格のずれ"}です。`;
 }
 
 function buildFallbackAnalystView(

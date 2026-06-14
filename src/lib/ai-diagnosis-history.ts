@@ -13,6 +13,21 @@ export type AiDiagnosisHistoryComment = {
   dataFreshness?: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  marketView?: {
+    scenario: "upside" | "range" | "downside";
+    confidence: "低" | "中" | "高";
+    topEvidence: string[];
+  };
+  historicalPatternView?: string;
+  newsImpactView?: string;
+  scenarioForecast?: {
+    oneToTwoWeeks: string;
+    oneToThreeMonths: string;
+    upsideTrigger: string;
+    downsideInvalidation: string;
+    dangerLevel: string;
+  };
+  riskFilter?: string;
   analystView?: string;
   scenarioPrediction?: string;
   userQuestionAnswer?: string;
