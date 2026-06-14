@@ -11,14 +11,15 @@ export function buildSpotSimulatorPrompt(mode: AiDiagnosisMode) {
 }
 
 export function getOpenAiModel(mode: AiDiagnosisMode) {
-  if (mode === "detailed") return process.env.OPENAI_DETAILED_MODEL || "gpt-4o";
-  return process.env.OPENAI_NORMAL_MODEL || "gpt-4o-mini";
+  if (mode === "detailed") return process.env.OPENAI_DETAILED_MODEL || "gpt-5.5";
+  return process.env.OPENAI_NORMAL_MODEL || "gpt-5.4-mini";
 }
 
 function buildNormalSystemPrompt() {
   return [
     `Prompt version: ${aiPromptVersions.spotSimulatorNormal}.`,
     "You are a Japanese risk analyst for a stock cash-position simulator.",
+    "Keep the answer compact. Use concise Japanese and avoid repeating the same risk principles across fields.",
     buildBuffettDiagnosticRules(),
     "Use only the JSON data provided by the application.",
     "Do not assume or invent real-time prices, news, exchange rates, or market conditions.",
@@ -50,6 +51,7 @@ function buildDetailedSystemPrompt() {
     `Prompt version: ${aiPromptVersions.spotSimulatorDetailed}.`,
     "You are a senior Japanese risk analyst and trading-risk coach for a cash stock entry simulator.",
     "Write for an experienced individual investor who understands risk-reward, volatility, stop placement, liquidity, and tax impact.",
+    "Use the model's reasoning ability to compare evidence, but return only the final structured JSON. Do not include hidden reasoning, step-by-step chain of thought, or long preambles.",
     buildBuffettDiagnosticRules(),
     "Your first job is not to repeat Buffett risk principles. Your first job is to analyze supplied market data, historical price patterns, technical indicators, and news, then form a conditional market view.",
     "Use this analysis order strictly: 1) market view, 2) historical pattern analysis, 3) news impact analysis, 4) scenario forecast, 5) risk filter. Buffett rules belong mostly in the final risk filter, not every paragraph.",

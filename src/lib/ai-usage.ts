@@ -426,10 +426,16 @@ function estimateTokens(value: unknown) {
 function estimateOpenAiCost(model: string | undefined, inputTokens: number, outputTokens: number) {
   if (!model) return 0;
   const normalized = model.toLowerCase();
-  const rates = normalized.includes("4o-mini")
-    ? { input: 0.00000015, output: 0.0000006 }
-    : normalized.includes("gpt-4o")
-      ? { input: 0.0000025, output: 0.00001 }
-      : { input: 0.000001, output: 0.000003 };
+  const rates = openAiTokenRates(normalized);
   return Number((inputTokens * rates.input + outputTokens * rates.output).toFixed(6));
+}
+
+function openAiTokenRates(normalizedModel: string) {
+  if (normalizedModel.includes("gpt-5.5")) return { input: 0.000005, output: 0.00003 };
+  if (normalizedModel.includes("gpt-5.4-mini")) return { input: 0.00000075, output: 0.0000045 };
+  if (normalizedModel.includes("gpt-5.4-nano")) return { input: 0.0000002, output: 0.00000125 };
+  if (normalizedModel.includes("gpt-5.4")) return { input: 0.0000025, output: 0.000015 };
+  if (normalizedModel.includes("4o-mini")) return { input: 0.00000015, output: 0.0000006 };
+  if (normalizedModel.includes("gpt-4o")) return { input: 0.0000025, output: 0.00001 };
+  return { input: 0.000001, output: 0.000003 };
 }

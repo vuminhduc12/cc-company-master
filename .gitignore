@@ -2,6 +2,9 @@
 .company/
 cc-company-master/
 node_modules/
+.env
+.env.local
+.env.*.local
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 packages/dashboard/dist/
