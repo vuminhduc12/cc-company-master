@@ -29,23 +29,23 @@ export function StockChart({ prices, ticker = "RGTI" }: { prices: DailyPrice[]; 
   const rangeChange = latest && first && first.close > 0 ? ((latest.close - first.close) / first.close) * 100 : 0;
   const totalVolume = visiblePrices.reduce((sum, price) => sum + price.volume, 0);
   const isUp = rangeChange >= 0;
-  const priceColor = isUp ? "#00c805" : "#ff3b30";
+  const priceColor = isUp ? "#16a34a" : "#dc2626";
   const rangeHigh = visiblePrices.reduce((max, price) => Math.max(max, price.high), Number.NEGATIVE_INFINITY);
   const rangeLow = visiblePrices.reduce((min, price) => Math.min(min, price.low), Number.POSITIVE_INFINITY);
 
   return (
-    <div className="max-w-full min-w-0 overflow-x-hidden rounded-3xl border border-white/10 bg-[#0b1120] shadow-2xl shadow-black/30 ring-1 ring-white/5">
-      <div className="flex flex-col justify-between gap-4 border-b border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(111,45,168,0.20),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] p-4 sm:p-5 xl:flex-row xl:items-start">
+    <div className="max-w-full min-w-0 overflow-x-hidden rounded-xl border border-white/10 bg-neutral-950 shadow-2xl shadow-black/30 ring-1 ring-white/5">
+      <div className="flex flex-col justify-between gap-4 border-b border-white/10 bg-[linear-gradient(180deg,rgba(23,23,23,0.96),rgba(5,5,5,0.92))] p-4 sm:p-5 xl:flex-row xl:items-start">
         <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-[0.20em] text-[#b892ff]">Advanced Chart</p>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-teal-200">Advanced Chart</p>
           <h2 className="mt-1 text-xl font-black text-slate-50">{ticker}</h2>
           <p className="mt-1 text-sm text-slate-400">価格 / 移動平均 / 出来高 / RSI</p>
         </div>
-        <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/55 p-1 [-webkit-overflow-scrolling:touch]">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/45 p-1 [-webkit-overflow-scrolling:touch]">
           {ranges.map((range) => (
             <button
               key={range.label}
-              className={range.label === rangeLabel ? "whitespace-nowrap rounded-xl bg-[#6f2da8] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-purple-950/40" : "whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-bold text-slate-400 hover:bg-white/10 hover:text-slate-100"}
+              className={range.label === rangeLabel ? "whitespace-nowrap rounded-lg bg-teal-300 px-3 py-1.5 text-xs font-black text-neutral-950 shadow-lg shadow-teal-950/30" : "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold text-slate-400 hover:bg-white/10 hover:text-slate-100"}
               onClick={() => setRangeLabel(range.label)}
             >
               {range.label}
@@ -60,7 +60,7 @@ export function StockChart({ prices, ticker = "RGTI" }: { prices: DailyPrice[]; 
         <ChartMetric label="出来高合計" value={`${Math.round(totalVolume / 1000000).toLocaleString()}M`} tone="purple" />
       </div>
       <div className="px-3 pb-4 sm:px-5">
-        <div className="h-[320px] max-w-full min-w-0 overflow-x-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,#111827,#0b1120)] p-2 sm:h-[410px] sm:p-4">
+        <div className="h-[320px] max-w-full min-w-0 overflow-x-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,#101010,#050505)] p-2 sm:h-[410px] sm:p-4">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={visiblePrices} margin={{ top: 12, right: 8, left: -8, bottom: 4 }}>
               <defs>
@@ -77,13 +77,13 @@ export function StockChart({ prices, ticker = "RGTI" }: { prices: DailyPrice[]; 
               <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(148,163,184,0.30)", borderRadius: 14, color: "#f8fafc", boxShadow: "0 18px 36px rgba(0,0,0,0.35)" }} cursor={{ stroke: "rgba(255,255,255,0.28)", strokeDasharray: "4 4" }} />
               <Area type="monotone" dataKey="close" name="Close" stroke={priceColor} strokeWidth={3.2} fill={`url(#stock-fill-${ticker})`} dot={false} activeDot={{ r: 5, fill: priceColor, stroke: "#0f172a", strokeWidth: 2 }} />
               <Line type="monotone" dataKey="ma20" name="MA20" stroke="#f7b955" strokeWidth={1.8} dot={false} strokeDasharray="5 4" />
-              <Line type="monotone" dataKey="ma50" name="MA50" stroke="#60a5fa" strokeWidth={1.8} dot={false} strokeDasharray="5 4" />
+              <Line type="monotone" dataKey="ma50" name="MA50" stroke="#2dd4bf" strokeWidth={1.8} dot={false} strokeDasharray="5 4" />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
       <div className="grid min-w-0 gap-4 px-3 pb-4 sm:px-5 sm:pb-5 lg:grid-cols-[1fr_0.7fr]">
-        <div className="max-w-full min-w-0 overflow-x-hidden rounded-2xl border border-white/10 bg-slate-950/70 p-3 sm:p-4">
+        <div className="max-w-full min-w-0 overflow-x-hidden rounded-xl border border-white/10 bg-black/45 p-3 sm:p-4">
           <p className="mb-3 text-sm font-bold text-slate-100">Volume</p>
           <ResponsiveContainer width="100%" height={170}>
             <BarChart data={visiblePrices}>
@@ -91,11 +91,11 @@ export function StockChart({ prices, ticker = "RGTI" }: { prices: DailyPrice[]; 
               <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={formatDateTick} minTickGap={30} tickLine={false} axisLine={false} />
               <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}M`} width={42} tickLine={false} axisLine={false} />
               <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(148,163,184,0.30)", borderRadius: 14, color: "#f8fafc" }} formatter={(value) => `${Math.round(Number(value) / 1000000)}M`} />
-              <Bar dataKey="volume" name="Volume" fill="#8b5cf6" opacity={0.82} radius={[5, 5, 0, 0]} />
+              <Bar dataKey="volume" name="Volume" fill="#14b8a6" opacity={0.82} radius={[5, 5, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="max-w-full min-w-0 overflow-x-hidden rounded-2xl border border-white/10 bg-slate-950/70 p-3 sm:p-4">
+        <div className="max-w-full min-w-0 overflow-x-hidden rounded-xl border border-white/10 bg-black/45 p-3 sm:p-4">
           <p className="mb-3 text-sm font-bold text-slate-100">RSI</p>
           <ResponsiveContainer width="100%" height={170}>
             <LineChart data={visiblePrices}>
@@ -124,11 +124,11 @@ function ChartMetric({ label, value, tone = "default" }: { label: string; value:
     up: "text-green-300",
     down: "text-red-300",
     blue: "text-sky-300",
-    purple: "text-purple-200"
+    purple: "text-teal-200"
   }[tone];
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-3">
+    <div className="rounded-xl border border-white/10 bg-black/38 p-3">
       <p className="text-xs font-bold text-slate-500">{label}</p>
       <p className={`mt-1 text-sm font-black tabular-nums ${color}`}>{value}</p>
     </div>

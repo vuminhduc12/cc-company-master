@@ -63,33 +63,33 @@ export function FinanceDashboardChart({
   const baseline = rangeLabel === "1日" ? previousClose : firstValue;
   const changePercent = baseline && lastValue ? ((lastValue - baseline) / baseline) * 100 : 0;
   const isUp = changePercent >= 0;
-  const strokeColor = isUp ? "#00c805" : "#ff3b30";
-  const accentGlow = isUp ? "shadow-green-900/10" : "shadow-red-900/10";
+  const strokeColor = isUp ? "#16a34a" : "#dc2626";
+  const accentGlow = isUp ? "shadow-emerald-900/10" : "shadow-red-900/10";
   const rangeLow = chartData.reduce((min, point) => Math.min(min, point.value), Number.POSITIVE_INFINITY);
   const rangeHigh = chartData.reduce((max, point) => Math.max(max, point.value), Number.NEGATIVE_INFINITY);
 
   return (
-    <div className={`max-w-full min-w-0 overflow-x-hidden rounded-2xl border border-slate-200 bg-white shadow-xl ${accentGlow}`}>
+    <div className={`max-w-full min-w-0 overflow-x-hidden rounded-2xl border border-white/10 bg-black/[0.32] shadow-xl ring-1 ring-white/5 ${accentGlow}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 px-4 pt-4 sm:px-5 sm:pt-5">
-          <p className="text-sm font-bold text-slate-950">{ticker} Advanced Chart</p>
-          <p className="mt-1 text-xs font-medium text-slate-500">
+          <p className="text-sm font-bold text-slate-50">{ticker} Advanced Chart</p>
+          <p className="mt-1 text-xs font-medium text-slate-400">
             {rangeLabel === "1日" && intraday.length >= 2 ? "通常取引と時間外を含む1分足" : "日足履歴を表示"}
           </p>
         </div>
-        <div className={isUp ? "px-4 pt-0 text-left text-green-700 sm:px-5 sm:pt-5 sm:text-right" : "px-4 pt-0 text-left text-red-700 sm:px-5 sm:pt-5 sm:text-right"}>
+        <div className={isUp ? "px-4 pt-0 text-left text-emerald-300 sm:px-5 sm:pt-5 sm:text-right" : "px-4 pt-0 text-left text-red-300 sm:px-5 sm:pt-5 sm:text-right"}>
           <p className="text-xs font-semibold text-slate-500">表示期間</p>
           <p className="text-xl font-black tabular-nums">{changePercent >= 0 ? "+" : ""}{changePercent.toFixed(2)}%</p>
         </div>
       </div>
 
-      <div className="mt-4 flex gap-1 overflow-x-auto border-y border-slate-100 px-3 py-2 [-webkit-overflow-scrolling:touch] sm:px-5">
+      <div className="mt-4 flex gap-1 overflow-x-auto border-y border-white/10 px-3 py-2 [-webkit-overflow-scrolling:touch] sm:px-5">
         {ranges.map((range) => (
           <button
             key={range.label}
             className={range.label === rangeLabel
-              ? "whitespace-nowrap rounded-full bg-[#6f2da8] px-3 py-1.5 text-xs font-black text-white shadow-sm"
-              : "whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-900"}
+              ? "whitespace-nowrap rounded-lg bg-teal-300 px-3 py-1.5 text-xs font-black text-neutral-950 shadow-sm"
+              : "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold text-slate-400 hover:bg-white/10 hover:text-slate-100"}
             onClick={() => setRangeLabel(range.label)}
           >
             {range.label}
@@ -97,13 +97,13 @@ export function FinanceDashboardChart({
         ))}
       </div>
 
-      <div className="grid gap-2 border-b border-slate-100 px-4 py-3 text-xs sm:grid-cols-3 sm:px-5">
+      <div className="grid gap-2 border-b border-white/10 px-4 py-3 text-xs sm:grid-cols-3 sm:px-5">
         <ChartStat label="現在" value={lastValue ? `$${lastValue.toFixed(2)}` : "-"} />
         <ChartStat label="レンジ安値" value={Number.isFinite(rangeLow) ? `$${rangeLow.toFixed(2)}` : "-"} />
         <ChartStat label="レンジ高値" value={Number.isFinite(rangeHigh) ? `$${rangeHigh.toFixed(2)}` : "-"} />
       </div>
 
-      <div className="h-[310px] max-w-full min-w-0 overflow-x-hidden bg-[radial-gradient(circle_at_20%_0%,rgba(111,45,168,0.12),transparent_34%),linear-gradient(180deg,#111827,#0b1120)] p-2 sm:h-[390px] sm:p-4">
+      <div className="h-[310px] max-w-full min-w-0 overflow-x-hidden bg-[linear-gradient(180deg,rgba(10,10,10,0.24),rgba(0,0,0,0.34))] p-2 sm:h-[390px] sm:p-4">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 14, right: 14, left: -8, bottom: 6 }}>
             <defs>
@@ -133,9 +133,9 @@ export function FinanceDashboardChart({
 
 function ChartStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-3 py-2">
-      <p className="font-bold text-slate-400">{label}</p>
-      <p className="mt-1 font-black text-slate-950 tabular-nums">{value}</p>
+    <div className="rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2">
+      <p className="font-bold text-slate-500">{label}</p>
+      <p className="mt-1 font-black text-slate-100 tabular-nums">{value}</p>
     </div>
   );
 }

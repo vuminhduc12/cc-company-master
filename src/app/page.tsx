@@ -219,11 +219,21 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 sm:space-y-7">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 text-slate-950 shadow-2xl shadow-black/20">
-        <div className="border-b border-slate-200 bg-white px-3 py-3 sm:px-5">
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(23,23,23,0.96),rgba(5,5,5,0.98)_55%,rgba(19,78,74,0.60))] text-slate-50 shadow-2xl shadow-black/35 ring-1 ring-white/5">
+        <div className="border-b border-white/10 bg-black/24 px-3 py-3 backdrop-blur sm:px-5">
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-teal-200">Market Cockpit</p>
+              <h1 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">Live Watchlist Command</h1>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1.5 font-bold text-slate-300">Tokyo Session</span>
+              <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">Risk Review</span>
+            </div>
+          </div>
           <div className="mb-3 flex flex-wrap gap-2">
             {listManager.lists.map((list) => (
-              <MarketFilterButton key={list.id} active={dashboardListId === list.id} count={dashboardListCounts[list.id] ?? 0} label={list.name} onClick={() => changeDashboardList(list.id)} variant="light" />
+              <MarketFilterButton key={list.id} active={dashboardListId === list.id} count={dashboardListCounts[list.id] ?? 0} label={list.name} onClick={() => changeDashboardList(list.id)} />
             ))}
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
@@ -243,7 +253,7 @@ export default function DashboardPage() {
               );
             })}
             {marketFilteredWatchlist.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-400">
                 この市場のWatchlist銘柄はまだありません。
               </div>
             ) : null}
@@ -252,52 +262,55 @@ export default function DashboardPage() {
 
         <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:p-6 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="min-w-0">
-            <div className="border-b border-slate-200 pb-5">
+            <div className="border-b border-white/10 pb-5">
               <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-5xl font-black tracking-tight text-slate-950 sm:text-7xl">{selectedItem.stock.ticker}</h2>
-                    <MarketBadge market={marketForWatchItem(selectedItem)} compact variant="light" />
+                    <h2 className="text-5xl font-black tracking-tight text-white sm:text-7xl">{selectedItem.stock.ticker}</h2>
+                    <MarketBadge market={marketForWatchItem(selectedItem)} compact />
                     <StatusBadge value={status} />
                   </div>
-                  <p className="mt-2 text-sm font-semibold text-slate-500">{selectedItem.stock.exchange} · {selectedItem.stock.companyName}</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-400">{selectedItem.stock.exchange} · {selectedItem.stock.companyName}</p>
                   <div className="mt-4 flex flex-wrap items-end gap-3">
-                    <p className="text-4xl font-black tracking-tight text-slate-950 tabular-nums sm:text-5xl">
+                    <p className="text-4xl font-black tracking-tight text-white tabular-nums sm:text-6xl">
                       {formatMoney(displayedPrice, quoteCurrency)}
                     </p>
-                    <span className={regularChangePercent >= 0 ? "mb-1 rounded-lg bg-green-100 px-2.5 py-1.5 text-sm font-black text-green-700" : "mb-1 rounded-lg bg-red-100 px-2.5 py-1.5 text-sm font-black text-red-700"}>
+                    <span className={regularChangePercent >= 0 ? "mb-1 rounded-lg border border-emerald-300/25 bg-emerald-300/[0.12] px-2.5 py-1.5 text-sm font-black text-emerald-200" : "mb-1 rounded-lg border border-red-300/25 bg-red-300/[0.12] px-2.5 py-1.5 text-sm font-black text-red-200"}>
                       {regularChangePercent >= 0 ? "+" : ""}{regularChangePercent.toFixed(2)}%
                     </span>
-                    <span className={regularChange >= 0 ? "mb-2 text-sm font-semibold text-green-700" : "mb-2 text-sm font-semibold text-red-700"}>
+                    <span className={regularChange >= 0 ? "mb-2 text-sm font-semibold text-emerald-300" : "mb-2 text-sm font-semibold text-red-300"}>
                       {regularChange >= 0 ? "+" : ""}{formatMoney(regularChange, quoteCurrency)} 今日
                     </span>
                   </div>
-                  <p className="mt-3 border-l-2 border-slate-300 pl-3 text-xs leading-5 text-slate-500">
+                  <p className="mt-3 border-l-2 border-teal-300/35 pl-3 text-xs leading-5 text-slate-400">
                     参考情報です。最終判断はご自身でご確認ください
                   </p>
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
                     通常取引: {formatMoney(regularPrice, quoteCurrency)} / 終了: {formatDateTime(realtimeQuote?.regular.asOf)}
                     {quoteLoading ? " / 更新中..." : ""}
                   </p>
                   {realtimeQuote?.extended ? (
-                    <p className={realtimeQuote.extended.changePercent && realtimeQuote.extended.changePercent >= 0 ? "mt-1 text-sm font-bold text-green-700" : "mt-1 text-sm font-bold text-red-700"}>
+                    <p className={realtimeQuote.extended.changePercent && realtimeQuote.extended.changePercent >= 0 ? "mt-1 text-sm font-bold text-emerald-300" : "mt-1 text-sm font-bold text-red-300"}>
                       {realtimeQuote.extended.label}: {formatMoney(realtimeQuote.extended.price, quoteCurrency)}
                       {realtimeQuote.extended.changePercent !== null ? ` (${realtimeQuote.extended.changePercent >= 0 ? "+" : ""}${realtimeQuote.extended.changePercent.toFixed(2)}%)` : ""} / {formatDateTime(realtimeQuote.extended.asOf)}
                     </p>
                   ) : (
-                    <p className="mt-1 text-sm font-semibold text-slate-500">{quoteError ? `リアルタイム取得失敗: ${quoteError}` : "時間外価格は現在未配信です。"}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-400">{quoteError ? `リアルタイム取得失敗: ${quoteError}` : "時間外価格は現在未配信です。"}</p>
                   )}
                 </div>
                 <div className="flex w-full flex-col gap-3 md:w-auto md:shrink-0 md:items-end">
-                  <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm shadow-sm">
-                    <p className="text-xs font-semibold text-slate-500">AI スコア</p>
-                    <p className="mt-1 text-5xl font-black tracking-tight text-slate-950 tabular-nums">{score}</p>
+                  <div className="w-full rounded-2xl border border-teal-300/20 bg-teal-300/[0.08] px-5 py-4 text-sm shadow-2xl shadow-teal-950/20 md:w-[180px]">
+                    <p className="text-xs font-semibold text-teal-100/70">AI スコア</p>
+                    <p className="mt-1 text-5xl font-black tracking-tight text-white tabular-nums">{score}</p>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full bg-teal-300" style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
+                    </div>
                   </div>
                   <div className="flex gap-2">
-                    <Link className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100" href={`/stocks/${selectedItem.stock.ticker}`}>
+                    <Link className="rounded-lg border border-white/10 bg-white/[0.08] px-4 py-2 text-sm font-bold text-slate-100 shadow-sm hover:bg-white/[0.12]" href={`/stocks/${selectedItem.stock.ticker}`}>
                       詳細
                     </Link>
-                    <a className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50" href={selectedFinanceUrl} target="_blank" rel="noreferrer">
+                    <a className="rounded-lg border border-teal-300/25 bg-teal-300/10 px-4 py-2 text-sm font-bold text-teal-100 shadow-sm hover:bg-teal-300/[0.15]" href={selectedFinanceUrl} target="_blank" rel="noreferrer">
                       Google Finance
                     </a>
                   </div>
@@ -317,12 +330,12 @@ export default function DashboardPage() {
           </div>
 
           <aside className="min-w-0 space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-lg font-bold text-slate-950">主要指標</h3>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{realtimeQuote?.marketState ?? "LOCAL"}</span>
+                <h3 className="text-lg font-bold text-white">主要指標</h3>
+                <span className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-1 text-xs font-bold text-slate-300">{realtimeQuote?.marketState ?? "LOCAL"}</span>
               </div>
-              <div className="divide-y divide-slate-200">
+              <div className="divide-y divide-white/10">
                 <FactRow label="前日の終値" value={formatMoney(regularPreviousClose, quoteCurrency)} />
                 <FactRow label="日次変動幅" value={formatRange(realtimeQuote?.summary.dayRange.low, realtimeQuote?.summary.dayRange.high, quoteCurrency, `${formatMoney(latest.low, quoteCurrency)} - ${formatMoney(latest.high, quoteCurrency)}`)} />
                 <FactRow label="年間変動幅" value={formatRange(realtimeQuote?.summary.yearRange.low, realtimeQuote?.summary.yearRange.high, quoteCurrency)} />
@@ -334,9 +347,9 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="font-bold text-slate-950">概要</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
+            <div className="rounded-2xl border border-white/10 bg-black/28 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
+              <h3 className="font-bold text-white">概要</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-300">
                 {selectedItem.stock.companyName}は{selectedItem.stock.sector}関連銘柄です。通常取引価格、時間外価格、日足テクニカル、ニュース材料を同じ画面で確認できます。
               </p>
               <p className="mt-3 text-xs leading-5 text-slate-500">
@@ -636,19 +649,19 @@ function MarketChip({
   return (
     <button
       className={active
-        ? "flex min-w-[156px] items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-left shadow-sm"
-        : "flex min-w-[156px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm hover:bg-slate-50"}
+        ? "flex min-w-[164px] items-center gap-3 rounded-xl border border-teal-300/45 bg-teal-300/[0.14] px-3 py-2 text-left shadow-lg shadow-teal-950/20 ring-1 ring-teal-200/10"
+        : "flex min-w-[164px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-left shadow-sm transition hover:border-teal-300/25 hover:bg-white/[0.08]"}
       onClick={onClick}
     >
-      <span className={change >= 0 ? "grid size-9 place-items-center rounded-lg bg-green-100 text-lg font-bold text-green-700" : "grid size-9 place-items-center rounded-lg bg-red-100 text-lg font-bold text-red-700"}>
+      <span className={change >= 0 ? "grid size-9 place-items-center rounded-lg border border-emerald-300/20 bg-emerald-300/10 text-lg font-bold text-emerald-200" : "grid size-9 place-items-center rounded-lg border border-red-300/20 bg-red-300/10 text-lg font-bold text-red-200"}>
         {change >= 0 ? "↑" : "↓"}
       </span>
       <span className="min-w-0">
         <span className="flex items-center gap-2">
-          <span className="block text-sm font-bold text-slate-950">{ticker}</span>
-          <MarketBadge market={market} compact variant="light" />
+          <span className="block text-sm font-black text-white">{ticker}</span>
+          <MarketBadge market={market} compact />
         </span>
-        <span className="block truncate text-xs text-slate-500">{price ? formatMoney(price, currency) : "-"} / <span className={change >= 0 ? "text-green-700" : "text-red-700"}>{price ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span></span>
+        <span className="block truncate text-xs text-slate-400">{price ? formatMoney(price, currency) : "-"} / <span className={change >= 0 ? "text-emerald-300" : "text-red-300"}>{price ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span></span>
       </span>
     </button>
   );
@@ -687,8 +700,8 @@ function currencyForTicker(ticker: string) {
 function FactRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 py-3 text-sm">
-      <span className="min-w-0 text-slate-500">{label}</span>
-      <span className="max-w-[180px] text-right font-bold text-slate-900">{value}</span>
+      <span className="min-w-0 text-slate-400">{label}</span>
+      <span className="max-w-[180px] text-right font-bold text-slate-100">{value}</span>
     </div>
   );
 }
@@ -711,7 +724,7 @@ function AuditTile({ label, value, tone = "default" }: { label: string; value: s
   }[tone];
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-900/82 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
+    <div className="rounded-xl border border-white/10 bg-neutral-950/82 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
       <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <p className={`mt-2 break-words text-xl font-black ${color}`}>{value}</p>
     </div>
@@ -774,7 +787,7 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
   }[tone];
 
   return (
-    <div className="rounded-xl bg-slate-950/60 p-3">
+    <div className="rounded-xl bg-black/42 p-3">
       <p className="text-xs text-slate-500">{label}</p>
       <p className={`mt-1 font-semibold ${color}`}>{value}</p>
     </div>

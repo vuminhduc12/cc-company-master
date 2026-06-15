@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 
@@ -16,6 +17,7 @@ const links = [
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const jobResult = useAiJobResult();
   const [today, setToday] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -36,24 +38,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-50">
-      <div className="fixed inset-0 -z-10 bg-[linear-gradient(180deg,rgba(14,165,233,0.10),rgba(2,6,23,0)_260px),linear-gradient(90deg,rgba(15,23,42,0.65)_1px,transparent_1px),linear-gradient(180deg,rgba(15,23,42,0.65)_1px,transparent_1px)] bg-[size:100%_100%,48px_48px,48px_48px]" />
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/85 backdrop-blur-xl">
-        <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6">
+    <div className="min-h-screen bg-[#050505] text-slate-50">
+      <div className="fixed inset-0 -z-10 bg-[linear-gradient(180deg,rgba(20,184,166,0.12),rgba(5,5,5,0)_300px),linear-gradient(120deg,rgba(245,158,11,0.08),transparent_32%),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:100%_100%,100%_100%,44px_44px,44px_44px]" />
+      <header className="sticky top-0 z-20 border-b border-white/10 bg-black/[0.78] backdrop-blur-xl">
+        <div className="mx-auto max-w-[1600px] px-4 py-3 sm:px-6">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <Link className="text-sm font-black tracking-tight text-slate-50 sm:text-base" href="/">
-                量子株 AIスクリーナー
+            <div className="flex min-w-0 items-center gap-3">
+              <Link className="grid size-10 shrink-0 place-items-center rounded-xl border border-teal-300/30 bg-teal-300/10 text-sm font-black text-teal-100 shadow-lg shadow-teal-950/30" href="/">
+                Q
               </Link>
-              <div className="mt-1 hidden items-center gap-2 text-xs text-slate-500 sm:flex">
-                <span>{today || "---- -- --"}</span>
-                <span className={`rounded-full border px-2 py-0.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
+              <div className="min-w-0">
+                <Link className="block truncate text-sm font-black tracking-tight text-slate-50 sm:text-base" href="/">
+                  株価 AIスクリーナー
+                </Link>
+                <div className="mt-1 hidden items-center gap-2 text-xs text-slate-500 sm:flex">
+                  <span>{today || "---- -- --"}</span>
+                  <span className={`rounded-full border px-2 py-0.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
+                </div>
               </div>
             </div>
             <button
               aria-expanded={menuOpen}
               aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
-              className="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-slate-100 shadow-lg shadow-black/20 transition hover:border-sky-300/30 hover:bg-sky-300/10 lg:hidden"
+              className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.06] text-slate-100 shadow-lg shadow-black/20 transition hover:border-teal-300/30 hover:bg-teal-300/10 lg:hidden"
               onClick={() => setMenuOpen((current) => !current)}
               type="button"
             >
@@ -64,38 +71,53 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </button>
             <div className="hidden items-center gap-2 lg:flex">
-              <span className="rounded-full border border-sky-300/25 bg-sky-300/10 px-3 py-1.5 text-xs font-black text-sky-100">Free プラン</span>
+              <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">Free プラン</span>
             </div>
           </div>
-          <p className="mt-3 border-l-2 border-sky-300/35 pl-3 text-[11px] leading-5 text-slate-500">
+          <p className="mt-2 border-l-2 border-teal-300/35 pl-3 text-[11px] leading-5 text-slate-500">
             参考情報です。最終判断はご自身でご確認ください
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs lg:hidden">
-            <span className="rounded-full border border-sky-300/25 bg-sky-300/10 px-3 py-1.5 font-black text-sky-100">Free プラン</span>
+            <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">Free プラン</span>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">{today || "---- -- --"}</span>
             <span className={`rounded-full border px-3 py-1.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
           </div>
-          <nav className="mt-4 hidden gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] lg:flex">
-            {links.map(([href, label]) => (
-              <Link key={href} href={href} className="whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-sky-300/30 hover:bg-sky-300/10 hover:text-sky-100 sm:px-4 sm:text-sm">
-                {label}
-              </Link>
-            ))}
+          <nav className="mt-3 hidden gap-1.5 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.035] p-1 [-webkit-overflow-scrolling:touch] lg:flex">
+            {links.map(([href, label]) => {
+              const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={active
+                    ? "whitespace-nowrap rounded-xl border border-teal-300/35 bg-teal-300/[0.14] px-3.5 py-2 text-sm font-black text-teal-50 shadow-lg shadow-teal-950/20"
+                    : "whitespace-nowrap rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-sm font-semibold text-slate-300 transition hover:border-teal-300/30 hover:bg-teal-300/10 hover:text-teal-100"}
+                >
+                  {label}
+                </Link>
+              );
+            })}
           </nav>
           {menuOpen ? (
-            <nav className="mt-4 rounded-3xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl shadow-black/40 ring-1 ring-white/5 lg:hidden">
+            <nav className="mt-4 rounded-2xl border border-white/10 bg-neutral-950/95 p-2 shadow-2xl shadow-black/40 ring-1 ring-white/5 lg:hidden">
               <div className="grid gap-2">
-                {links.map(([href, label]) => (
-                  <Link
-                    key={href}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-slate-100 transition hover:border-sky-300/30 hover:bg-sky-300/10"
-                    href={href}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <span>{label}</span>
-                    <span className="text-slate-500">›</span>
-                  </Link>
-                ))}
+                {links.map(([href, label]) => {
+                  const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+                  return (
+                    <Link
+                      key={href}
+                      className={active
+                        ? "flex items-center justify-between rounded-xl border border-teal-300/35 bg-teal-300/[0.14] px-4 py-3 text-sm font-black text-teal-50"
+                        : "flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-slate-100 transition hover:border-teal-300/30 hover:bg-teal-300/10"}
+                      href={href}
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      <span>{label}</span>
+                      <span className="text-slate-500">›</span>
+                    </Link>
+                  );
+                })}
               </div>
             </nav>
           ) : null}
