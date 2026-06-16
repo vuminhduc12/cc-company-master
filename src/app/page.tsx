@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
 import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { DataTable } from "@/components/DataTable";
-import { FinanceDashboardChart, type IntradayPoint } from "@/components/FinanceDashboardChart";
+import { FinanceDashboardChart, type IntradayCandle, type IntradayPoint } from "@/components/FinanceDashboardChart";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForWatchItem } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
@@ -54,6 +54,7 @@ type RealtimeQuote = {
     instrumentType: string | null;
   };
   intraday: IntradayPoint[];
+  intradayCandles?: IntradayCandle[];
   fetchedAt: string;
 };
 
@@ -323,6 +324,7 @@ export default function DashboardPage() {
                 prices={chartPrices}
                 ticker={selectedItem.stock.ticker}
                 intraday={realtimeQuote?.intraday ?? []}
+                intradayCandles={realtimeQuote?.intradayCandles ?? []}
                 previousClose={regularPreviousClose}
                 extendedPrice={hasExtendedPrice ? realtimeQuote?.extended?.price ?? null : null}
               />
@@ -486,7 +488,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="min-w-0 overflow-x-hidden">
-          <StockChart prices={chartPrices} ticker={selectedItem.stock.ticker} />
+          <StockChart
+            prices={chartPrices}
+            ticker={selectedItem.stock.ticker}
+            intraday={realtimeQuote?.intraday ?? []}
+            intradayCandles={realtimeQuote?.intradayCandles ?? []}
+          />
         </div>
 
         <aside className="min-w-0 space-y-4">

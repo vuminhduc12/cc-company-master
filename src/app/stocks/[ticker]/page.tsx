@@ -271,7 +271,12 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
 
       <section className="min-w-0 scroll-mt-24 overflow-x-hidden" id="chart">
         <SectionHeading title="チャート" note="価格推移とテクニカルの全体像" />
-        <StockChart prices={chartPrices} ticker={stock.ticker} />
+        <StockChart
+          prices={chartPrices}
+          ticker={stock.ticker}
+          intraday={realtimeQuote?.intraday ?? []}
+          intradayCandles={realtimeQuote?.intradayCandles ?? []}
+        />
       </section>
 
       <section id="news-materials" className="scroll-mt-24 rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">

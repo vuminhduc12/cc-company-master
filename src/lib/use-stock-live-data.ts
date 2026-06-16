@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
 import type { TickerHistoryEntry } from "@/lib/stock-history-cache";
 import type { DailyPrice, NewsItem, Stock, WatchStatus } from "@/types";
+import type { TradingIntradayCandle, TradingIntradayPoint } from "@/components/TradingCandlestickChart";
 
 type RealtimeQuote = {
   ok: true;
@@ -17,6 +18,8 @@ type RealtimeQuote = {
     currency: string;
     asOf: string;
   };
+  intraday: TradingIntradayPoint[];
+  intradayCandles?: TradingIntradayCandle[];
   fetchedAt: string;
 };
 

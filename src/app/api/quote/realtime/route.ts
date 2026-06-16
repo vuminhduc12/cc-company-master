@@ -28,11 +28,20 @@ type YahooChartResult = {
     preMarketChange?: number;
     preMarketChangePercent?: number;
     preMarketTime?: number;
+    currentTradingPeriod?: {
+      pre?: { start?: number; end?: number };
+      regular?: { start?: number; end?: number };
+      post?: { start?: number; end?: number };
+    };
   };
   timestamp?: number[];
   indicators?: {
     quote?: Array<{
+      open?: Array<number | null>;
+      high?: Array<number | null>;
+      low?: Array<number | null>;
       close?: Array<number | null>;
+      volume?: Array<number | null>;
     }>;
   };
 };
@@ -107,7 +116,8 @@ export async function GET(request: NextRequest) {
         averageVolume: finiteOrNull(meta.averageDailyVolume3Month),
         instrumentType: meta.instrumentType ?? null
       },
-      intraday: buildIntradayPoints(result, meta.regularMarketTime),
+      intraday: buildIntradayPoints(result, meta),
+      intradayCandles: buildIntradayCandles(result, meta),
       fetchedAt: new Date().toISOString()
     });
   } catch (error) {
@@ -143,7 +153,7 @@ function buildExtendedSession(meta: NonNullable<YahooChartResult["meta"]>, resul
     };
   }
 
-  const lastExtendedPoint = buildIntradayPoints(result, meta.regularMarketTime)
+  const lastExtendedPoint = buildIntradayPoints(result, meta)
     .filter((point) => point.session === "extended")
     .at(-1);
   if (lastExtendedPoint) {
@@ -161,7 +171,7 @@ function buildExtendedSession(meta: NonNullable<YahooChartResult["meta"]>, resul
   return null;
 }
 
-function buildIntradayPoints(result: YahooChartResult, regularMarketTime: number | undefined) {
+function buildIntradayPoints(result: YahooChartResult, meta: NonNullable<YahooChartResult["meta"]>) {
   const timestamps = result.timestamp ?? [];
   const closes = result.indicators?.quote?.[0]?.close ?? [];
   return timestamps.map((timestamp, index) => {
@@ -170,9 +180,55 @@ function buildIntradayPoints(result: YahooChartResult, regularMarketTime: number
     return {
       time: toIso(timestamp),
       price,
-      session: regularMarketTime && timestamp > regularMarketTime ? "extended" : "regular"
+      session: classifySession(timestamp, meta)
     };
   }).filter((item): item is { time: string; price: number; session: "regular" | "extended" } => Boolean(item));
+}
+
+function buildIntradayCandles(result: YahooChartResult, meta: NonNullable<YahooChartResult["meta"]>) {
+  const timestamps = result.timestamp ?? [];
+  const quote = result.indicators?.quote?.[0];
+  const opens = quote?.open ?? [];
+  const highs = quote?.high ?? [];
+  const lows = quote?.low ?? [];
+  const closes = quote?.close ?? [];
+  const volumes = quote?.volume ?? [];
+  let cumulativeTypicalVolume = 0;
+  let cumulativeVolume = 0;
+
+  return timestamps.map((timestamp, index) => {
+    const open = opens[index];
+    const high = highs[index];
+    const low = lows[index];
+    const close = closes[index];
+    if (!isFiniteNumber(open) || !isFiniteNumber(high) || !isFiniteNumber(low) || !isFiniteNumber(close)) return null;
+    const rawVolume = volumes[index];
+    const volumeAvailable = isFiniteNumber(rawVolume) && rawVolume > 0;
+    const volume = volumeAvailable ? Math.max(0, rawVolume) : 0;
+    const typicalPrice = (high + low + close) / 3;
+    if (volumeAvailable) {
+      cumulativeTypicalVolume += typicalPrice * volume;
+      cumulativeVolume += volume;
+    }
+    return {
+      time: toIso(timestamp),
+      open,
+      high,
+      low,
+      close,
+      volume,
+      volumeAvailable,
+      vwap: cumulativeVolume > 0 ? cumulativeTypicalVolume / cumulativeVolume : null,
+      session: classifySession(timestamp, meta)
+    };
+  }).filter((item): item is { time: string; open: number; high: number; low: number; close: number; volume: number; volumeAvailable: boolean; vwap: number | null; session: "regular" | "extended" } => Boolean(item));
+}
+
+function classifySession(timestamp: number, meta: NonNullable<YahooChartResult["meta"]>): "regular" | "extended" {
+  const regularStart = meta.currentTradingPeriod?.regular?.start;
+  const regularEnd = meta.currentTradingPeriod?.regular?.end;
+  if (regularStart && regularEnd && timestamp >= regularStart && timestamp <= regularEnd) return "regular";
+  return "extended";
 }
 
 function normalizeYahooSymbol(ticker: string) {
