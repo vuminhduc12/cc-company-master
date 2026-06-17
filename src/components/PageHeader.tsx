@@ -21,7 +21,7 @@ export function PageHeader({
           <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-slate-50 sm:text-3xl">{title}</h1>
           {description ? <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500 sm:text-sm">{description}</p> : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 lg:shrink-0">{actions}</div> : null}
       </div>
       {metrics ? <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{metrics}</div> : null}
     </section>
@@ -38,8 +38,8 @@ export function HeaderPill({ label, tone = "default" }: { label: string; tone?: 
   }[tone];
 
   return (
-    <span className={`rounded-full border px-3 py-1.5 text-xs font-black ${className}`}>
-      {label}
+    <span className={`inline-flex max-w-full rounded-full border px-3 py-1.5 text-xs font-black ${className}`}>
+      <span className="truncate">{label}</span>
     </span>
   );
 }
