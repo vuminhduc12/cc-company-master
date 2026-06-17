@@ -79,11 +79,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <p className="mt-2 border-l-2 border-teal-300/35 pl-3 text-[11px] leading-5 text-slate-500">
             参考情報です。最終判断はご自身でご確認ください
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs lg:hidden">
-            <NewsNotificationCenter jobResult={jobResult} />
-            <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">Free プラン</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">{today || "---- -- --"}</span>
-            <span className={`rounded-full border px-3 py-1.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
+          <div className="mt-3 space-y-2 text-xs lg:hidden">
+            <NewsNotificationCenter jobResult={jobResult} layout="mobile" />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">Free プラン</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">{today || "---- -- --"}</span>
+              <span className={`rounded-full border px-3 py-1.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
+            </div>
           </div>
           <nav className="mt-3 hidden gap-1.5 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.035] p-1 [-webkit-overflow-scrolling:touch] lg:flex">
             {links.map(([href, label]) => {

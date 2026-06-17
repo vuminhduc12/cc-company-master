@@ -8,7 +8,13 @@ import type { AiJobResult, NewsItem } from "@/types";
 
 const seenNewsStorageKey = "d-finance-seen-news-notifications";
 
-export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult | null }) {
+export function NewsNotificationCenter({
+  jobResult,
+  layout = "desktop"
+}: {
+  jobResult: AiJobResult | null;
+  layout?: "desktop" | "mobile";
+}) {
   const [open, setOpen] = useState(false);
   const [seenKeys, setSeenKeys] = useState<Set<string>>(() => readSeenNewsKeys());
   const latestNews = useMemo(() => normalizeLatestNews(filterFreshNews(jobResult?.news ?? [])), [jobResult?.news]);
@@ -19,6 +25,7 @@ export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult |
       ? "AI News"
       : "Local News"
     : "AI Pending";
+  const isMobile = layout === "mobile";
 
   useEffect(() => {
     setSeenKeys(readSeenNewsKeys());
@@ -36,16 +43,18 @@ export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult |
   }
 
   return (
-    <div className="relative">
+    <div className={isMobile ? "relative w-full" : "relative"}>
       <button
         aria-expanded={open}
-        className="group flex min-w-[168px] items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-left shadow-lg shadow-black/20 transition hover:border-amber-300/30 hover:bg-amber-300/10"
+        className={isMobile
+          ? "group flex w-full items-center justify-between gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.08] px-3 py-2.5 text-left shadow-lg shadow-black/20 transition hover:border-amber-300/35 hover:bg-amber-300/15"
+          : "group flex min-w-[168px] items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-left shadow-lg shadow-black/20 transition hover:border-amber-300/30 hover:bg-amber-300/10"}
         onClick={toggleOpen}
         type="button"
       >
         <span className="min-w-0">
           <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-amber-200">{sourceLabel}</span>
-          <span className="mt-0.5 block max-w-[118px] truncate text-xs font-bold text-slate-100">
+          <span className={isMobile ? "mt-0.5 block max-w-[calc(100vw-112px)] truncate text-xs font-bold text-slate-100" : "mt-0.5 block max-w-[118px] truncate text-xs font-bold text-slate-100"}>
             {featured ? `${featured.ticker} ${featured.title}` : "新着なし"}
           </span>
         </span>
@@ -55,7 +64,10 @@ export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult |
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+10px)] z-30 w-[min(92vw,420px)] overflow-hidden rounded-2xl border border-white/10 bg-neutral-950 shadow-2xl shadow-black/50 ring-1 ring-white/5">
+        <div className={isMobile
+          ? "fixed inset-x-3 top-[132px] z-50 max-h-[calc(100vh-148px)] overflow-hidden rounded-2xl border border-white/10 bg-neutral-950 shadow-2xl shadow-black/50 ring-1 ring-white/5"
+          : "absolute right-0 top-[calc(100%+10px)] z-30 w-[min(92vw,420px)] overflow-hidden rounded-2xl border border-white/10 bg-neutral-950 shadow-2xl shadow-black/50 ring-1 ring-white/5"}
+        >
           <div className="border-b border-white/10 bg-[linear-gradient(180deg,rgba(245,158,11,0.14),rgba(2,6,23,0.70))] p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -71,7 +83,7 @@ export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult |
             </p>
           </div>
 
-          <div className="max-h-[420px] overflow-y-auto p-2">
+          <div className={isMobile ? "max-h-[calc(100vh-310px)] overflow-y-auto p-2" : "max-h-[420px] overflow-y-auto p-2"}>
             {latestNews.length ? latestNews.slice(0, 6).map((item) => (
               <Link
                 key={newsIdentity(item)}
