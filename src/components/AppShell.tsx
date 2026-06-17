@@ -76,9 +76,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">Free プラン</span>
             </div>
           </div>
-          <p className="mt-2 border-l-2 border-teal-300/35 pl-3 text-[11px] leading-5 text-slate-500">
-            参考情報です。最終判断はご自身でご確認ください
-          </p>
           <div className="mt-3 space-y-2 text-xs lg:hidden">
             <NewsNotificationCenter jobResult={jobResult} layout="mobile" />
             <div className="flex flex-wrap items-center gap-2">

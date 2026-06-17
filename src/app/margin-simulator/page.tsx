@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
+import { HeaderPill, PageHeader } from "@/components/PageHeader";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
@@ -203,20 +204,17 @@ export default function MarginSimulatorPage() {
   return (
     <div className="space-y-5">
       <LiveWatchlistStrip />
-      <section className="rounded-3xl border border-white/10 bg-slate-900/82 p-5 shadow-2xl shadow-black/30 ring-1 ring-white/5 sm:p-6">
-        <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">Margin Simulator</p>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-50 sm:text-3xl">信用買いシミュレーター（買建専用）</h2>
-            <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-400">
-              Excelの「入力・前提」「株価シナリオ」「建玉比較」をWeb化しました。下の計算パネルは信用新規買いから返済売りまでの買建シミュレーションです。
-            </p>
-          </div>
-          <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm leading-6 text-red-100">
-            信用取引は現物取引より損失が大きくなる可能性があります。ここでの計算は概算であり、証券会社の建玉画面、保証金率、規制、金利、手数料を必ず確認してください。
-          </div>
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Margin Simulator"
+        title="信用買いシミュレーター"
+        description="入力、株価シナリオ、建玉比較を先に操作できます。計算は概算です。"
+        actions={(
+          <>
+            <HeaderPill label="買建専用" tone="blue" />
+            <HeaderPill label="信用リスク注意" tone="red" />
+          </>
+        )}
+      />
 
       <section className="grid gap-5 xl:grid-cols-[430px_1fr]">
         <div className="rounded-2xl border border-sky-300/20 bg-slate-900/82 p-5 shadow-xl shadow-black/25 ring-1 ring-white/5">

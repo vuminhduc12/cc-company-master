@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AuthPanel } from "@/components/AuthPanel";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
+import { HeaderPill, PageHeader } from "@/components/PageHeader";
 import { resolveAiJobAudit } from "@/lib/ai-job-audit";
 import { authHeaders } from "@/lib/auth-fetch";
 import { stockDataProviderPolicyNote, stockDataProviderPriority, stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
@@ -175,13 +176,18 @@ export default function SettingsPage() {
   return (
     <div className="space-y-5">
       <LiveWatchlistStrip />
-      <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Control Center</p>
-        <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">Settings</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          自動更新時間、監視銘柄、AI分析の強さ、手動実行をここで管理します。APIキーは.env.localで管理し、画面には表示しません。
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Control Center"
+        title="Settings"
+        description="更新時間、監視銘柄、AI Job実行を管理します。APIキーは.env.localで管理します。"
+        actions={(
+          <>
+            <HeaderPill label={usageSummary?.plan.name ?? "Free"} tone="blue" />
+            <HeaderPill label={`AI残り ${usageSummary?.remainingCalls ?? "-"}回`} tone={(usageSummary?.remainingCalls ?? 1) > 0 ? "green" : "red"} />
+            <HeaderPill label={status === "running" ? "Job Running" : latestJobResult?.status ?? "Job Pending"} tone={status === "error" ? "red" : status === "running" ? "yellow" : "default"} />
+          </>
+        )}
+      />
 
       <AuthPanel />
 

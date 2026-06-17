@@ -218,15 +218,12 @@ export default function WatchlistPage() {
           <div className="min-w-0 p-5 sm:p-6">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Portfolio Monitor</p>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">Watchlist</h2>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
-              米国株・国内株を検索して、リアル株価を取得した銘柄をWatchlistに追加できます。全ページで共有され、15分ごとに自動更新されます。
-            </p>
-            <p className="mt-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2 text-xs leading-5 text-emerald-100">
-              データ取得優先順位: <span className="font-black">{stockDataProviderPriorityLabel}</span>
-            </p>
-            <p className="mt-2 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-2 text-xs leading-5 text-cyan-100">
-              保存モード: <span className="font-black">{isSyncChecking ? "DB同期確認中" : syncMode === "supabase" ? `Supabase DB同期 (${auth.email})` : syncError ? "localStorage（DB同期失敗）" : "localStorage"}</span>
-            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-1.5 text-xs font-black text-emerald-100">{stockDataProviderPriorityLabel}</span>
+              <span className="rounded-full border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-1.5 text-xs font-black text-cyan-100">
+                {isSyncChecking ? "DB同期確認中" : syncMode === "supabase" ? "Supabase同期" : syncError ? "localStorage / DB失敗" : "localStorage"}
+              </span>
+            </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <WatchStat label="表示銘柄" value={isSyncChecking ? "-" : `${visibleItems.length}`} tone="default" />
               <WatchStat label="米国株" value={isSyncChecking ? "-" : `${marketCounts.us}`} tone="green" />

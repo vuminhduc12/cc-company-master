@@ -283,9 +283,6 @@ export default function DashboardPage() {
                       {regularChange >= 0 ? "+" : ""}{formatMoney(regularChange, quoteCurrency)} 今日
                     </span>
                   </div>
-                  <p className="mt-3 border-l-2 border-teal-300/35 pl-3 text-xs leading-5 text-slate-400">
-                    参考情報です。最終判断はご自身でご確認ください
-                  </p>
                   <p className="mt-2 text-xs leading-5 text-slate-400">
                     通常取引: {formatMoney(regularPrice, quoteCurrency)} / 終了: {formatDateTime(realtimeQuote?.regular.asOf)}
                     {quoteLoading ? " / 更新中..." : ""}

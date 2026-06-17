@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForWatchItem, type StockMarket } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
+import { HeaderPill, PageHeader } from "@/components/PageHeader";
 import { news } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
 import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
@@ -70,28 +71,20 @@ function NewsPageContent() {
   return (
     <div className="space-y-6">
       <LiveWatchlistStrip />
-      <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">News Intelligence</p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">AIニュース分析</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
-              {jobResult ? `海外ニュースを日本語で分析 / 最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}。{freshNewsWindowDays}日以内のニュースだけを自動表示します。
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      <PageHeader
+        eyebrow="News Intelligence"
+        title="AIニュース分析"
+        description={`${freshNewsWindowDays}日以内のニュースを新着順で表示します。`}
+        actions={(
+          <>
             <a className="rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/20" href={financeUrl(activeTicker, visibleWatchlist)} target="_blank" rel="noreferrer">
               Google Financeで確認 ↗
             </a>
-            <div className="rounded-full border border-white/10 bg-slate-950/55 px-4 py-2 text-sm text-slate-300">
-              {jobResult ? "Supabase / 最新AI分析" : "mock-data"}
-            </div>
-            <div className="rounded-full border border-yellow-300/25 bg-yellow-300/10 px-4 py-2 text-sm text-yellow-100">
-              古いニュース非表示: {staleCount}件
-            </div>
-          </div>
-        </div>
-      </div>
+            <HeaderPill label={jobResult ? "Supabase / 最新AI分析" : "mock-data"} />
+            <HeaderPill label={`古いNews非表示 ${staleCount}`} tone="yellow" />
+          </>
+        )}
+      />
       {jobResult?.error ? (
         <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
           Error: {jobResult.error}
@@ -166,11 +159,7 @@ function NewsPageContent() {
 
 function NewsPageFallback() {
   return (
-    <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">News Intelligence</p>
-      <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">AIニュース分析</h2>
-      <p className="mt-3 text-sm leading-6 text-slate-400">ニュースを読み込み中です。</p>
-    </div>
+    <PageHeader eyebrow="News Intelligence" title="AIニュース分析" description="ニュースを読み込み中です。" />
   );
 }
 

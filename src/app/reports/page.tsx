@@ -2,6 +2,7 @@
 
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { NewsCard } from "@/components/NewsCard";
+import { HeaderPill, PageHeader } from "@/components/PageHeader";
 import { news, report } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
@@ -29,20 +30,17 @@ export default function ReportsPage() {
   return (
     <div className="space-y-5">
       <LiveWatchlistStrip />
-      <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
-        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Daily Briefing</p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">AI日次レポート</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              {jobResult ? `最終AI分析: ${jobResult.lastRun}` : "mock-dataを表示中"}。今日の結論、明日の確認点、ニュース別の読み解きをまとめます。
-            </p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
-            表示元: {jobResult ? "Supabase / 最新AI分析" : "mock-data"}
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Daily Briefing"
+        title="AI日次レポート"
+        description="結論、明日の確認点、重要ニュースを優先表示します。"
+        actions={(
+          <>
+            <HeaderPill label={jobResult ? `最終AI分析 ${jobResult.lastRun}` : "mock-data"} tone={jobResult ? "green" : "yellow"} />
+            <HeaderPill label={jobResult ? "Supabase" : "Local"} />
+          </>
+        )}
+      />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.7fr)]">
         <div className="rounded-3xl border border-sky-300/20 bg-sky-300/[0.07] p-5 shadow-xl shadow-black/25 ring-1 ring-white/5">
