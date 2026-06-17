@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
 import { newsIdentity } from "@/lib/use-ai-job-result";
 import type { AiJobResult, NewsItem } from "@/types";
 
@@ -10,7 +11,7 @@ const seenNewsStorageKey = "d-finance-seen-news-notifications";
 export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult | null }) {
   const [open, setOpen] = useState(false);
   const [seenKeys, setSeenKeys] = useState<Set<string>>(() => readSeenNewsKeys());
-  const latestNews = useMemo(() => normalizeLatestNews(jobResult?.news ?? []), [jobResult?.news]);
+  const latestNews = useMemo(() => normalizeLatestNews(filterFreshNews(jobResult?.news ?? [])), [jobResult?.news]);
   const unreadItems = latestNews.filter((item) => !seenKeys.has(newsIdentity(item)));
   const featured = latestNews[0] ?? null;
   const sourceLabel = jobResult
@@ -49,7 +50,7 @@ export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult |
           </span>
         </span>
         <span className={unreadItems.length ? "grid size-8 shrink-0 place-items-center rounded-full bg-amber-300 text-xs font-black text-neutral-950" : "grid size-8 shrink-0 place-items-center rounded-full border border-white/10 bg-black/30 text-xs font-black text-slate-400"}>
-          {unreadItems.length || latestNews.length}
+          {unreadItems.length || "✓"}
         </span>
       </button>
 
@@ -66,7 +67,7 @@ export function NewsNotificationCenter({ jobResult }: { jobResult: AiJobResult |
               </span>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-400">
-              AI Job / NewsAPI で取得されたWatchlist銘柄の最新ニュースです。
+              AI Job / NewsAPI で取得された{freshNewsWindowDays}日以内のニュースです。
             </p>
           </div>
 

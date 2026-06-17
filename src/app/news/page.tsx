@@ -29,7 +29,7 @@ function NewsPageContent() {
   const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
   const [newsListId, setNewsListId] = useState("all");
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
-  const allVisibleItems = (jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item)));
+  const allVisibleItems = sortNewsByPublishedAt((jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item))));
   const staleCount = countStaleNews(allVisibleItems);
   const items = filterFreshNews(allVisibleItems);
   const listCounts = useMemo(() => countWatchlistLists(listManager.lists, visibleWatchlist), [listManager.lists, visibleWatchlist]);
@@ -226,6 +226,10 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
 
 function newsKey(item: { publishedAt: string; ticker: string; title: string; url?: string }, index: number) {
   return `${item.ticker}-${item.publishedAt}-${item.url ?? item.title}-${index}`;
+}
+
+function sortNewsByPublishedAt(items: NewsItem[]) {
+  return items.slice().sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 }
 
 function buildTickerTabs(items: typeof news, visibleWatchlist: WatchlistItem[]) {
