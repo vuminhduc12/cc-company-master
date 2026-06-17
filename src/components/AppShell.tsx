@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { NewsNotificationCenter } from "@/components/NewsNotificationCenter";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 
 const links = [
@@ -71,6 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </button>
             <div className="hidden items-center gap-2 lg:flex">
+              <NewsNotificationCenter jobResult={jobResult} />
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">Free プラン</span>
             </div>
           </div>
@@ -78,6 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             参考情報です。最終判断はご自身でご確認ください
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs lg:hidden">
+            <NewsNotificationCenter jobResult={jobResult} />
             <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">Free プラン</span>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">{today || "---- -- --"}</span>
             <span className={`rounded-full border px-3 py-1.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>

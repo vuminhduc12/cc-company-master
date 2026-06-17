@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForWatchItem, type StockMarket } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
@@ -13,6 +14,15 @@ import { useWatchlistLists } from "@/lib/watchlist-lists";
 import type { NewsItem, WatchlistItem } from "@/types";
 
 export default function NewsPage() {
+  return (
+    <Suspense fallback={<NewsPageFallback />}>
+      <NewsPageContent />
+    </Suspense>
+  );
+}
+
+function NewsPageContent() {
+  const searchParams = useSearchParams();
   const jobResult = useAiJobResult();
   const listManager = useWatchlistLists();
   const userWatchlist = useUserWatchlist();
@@ -48,6 +58,14 @@ export default function NewsPage() {
     hideNewsItem(item);
     setHiddenNews(readHiddenNewsKeys());
   }
+
+  useEffect(() => {
+    const highlightedTicker = searchParams.get("highlight")?.toUpperCase();
+    if (!highlightedTicker) return;
+    if (tickerTabs.some((tab) => tab.ticker === highlightedTicker)) {
+      setSelectedTicker(highlightedTicker);
+    }
+  }, [searchParams, tickerTabs]);
 
   return (
     <div className="space-y-6">
@@ -142,6 +160,16 @@ export default function NewsPage() {
             : "この銘柄のニュースはまだありません。Manual AI Job または Cron が成功すると、Watchlist銘柄ごとのニュースがここに表示されます。"}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function NewsPageFallback() {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-xl shadow-black/25 ring-1 ring-white/5">
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">News Intelligence</p>
+      <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50">AIニュース分析</h2>
+      <p className="mt-3 text-sm leading-6 text-slate-400">ニュースを読み込み中です。</p>
     </div>
   );
 }
