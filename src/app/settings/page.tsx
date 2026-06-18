@@ -8,6 +8,7 @@ import { resolveAiJobAudit } from "@/lib/ai-job-audit";
 import { authHeaders } from "@/lib/auth-fetch";
 import { stockDataProviderPolicyNote, stockDataProviderPriority, stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { aiTasks, news, prices, report } from "@/lib/mock-data";
+import { useNewsPreferencesSyncStatus, type NewsPreferenceSyncStatus } from "@/lib/news-preferences";
 import { planDefinitions, type PlanDefinition } from "@/lib/plans";
 import { scoreStock } from "@/lib/scoring";
 import { useUserWatchlist } from "@/lib/user-watchlist";
@@ -69,6 +70,7 @@ export default function SettingsPage() {
   const [usageSummary, setUsageSummary] = useState<AiUsageSummary | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings);
   const executionAudit = resolveAiJobAudit(latestJobResult);
+  const newsSync = useNewsPreferencesSyncStatus();
 
   useEffect(() => {
     const stored = localStorage.getItem(storageKey);
@@ -190,6 +192,8 @@ export default function SettingsPage() {
       />
 
       <AuthPanel />
+
+      <NewsSyncStatusPanel status={newsSync.status} onRefresh={() => void newsSync.refresh()} />
 
       <section className="rounded-2xl border border-fuchsia-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -421,6 +425,61 @@ function AuditMetric({ label, value, tone = "default" }: { label: string; value:
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className={`mt-2 break-words text-lg font-black ${color}`}>{value}</p>
     </div>
+  );
+}
+
+function NewsSyncStatusPanel({ status, onRefresh }: { status: NewsPreferenceSyncStatus; onRefresh: () => void }) {
+  const tone = status.checking
+    ? "yellow"
+    : status.synced
+      ? "green"
+      : status.configured && status.signedIn
+        ? "yellow"
+        : "default";
+  const badgeClass = {
+    default: "border-white/10 bg-white/[0.055] text-slate-300",
+    green: "border-emerald-300/30 bg-emerald-300/10 text-emerald-100",
+    yellow: "border-amber-300/30 bg-amber-300/10 text-amber-100"
+  }[tone];
+  const statusLabel = status.checking ? "Checking" : status.synced ? "Synced" : status.signedIn ? "Needs setup" : "Local only";
+
+  return (
+    <section className="rounded-2xl border border-cyan-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">News Sync</p>
+          <h3 className="mt-2 text-lg font-semibold text-slate-50">通知既読・非表示News同期</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">{status.message}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <span className={`w-fit rounded-full border px-3 py-1.5 text-xs font-black ${badgeClass}`}>{statusLabel}</span>
+          <button
+            className="w-fit rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-black text-cyan-100 hover:bg-cyan-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={status.checking}
+            onClick={onRefresh}
+            type="button"
+          >
+            {status.checking ? "確認中" : "再同期"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <AuditMetric label="Supabase" value={status.configured ? "Configured" : "Not configured"} tone={status.configured ? "green" : "yellow"} />
+        <AuditMetric label="Login" value={status.signedIn ? "Signed in" : "Local mode"} tone={status.signedIn ? "green" : "yellow"} />
+        <AuditMetric label="非表示News" value={`${status.hiddenLocalCount}${status.hiddenRemoteCount !== null ? ` / DB ${status.hiddenRemoteCount}` : ""}`} tone={status.synced ? "green" : "blue"} />
+        <AuditMetric label="通知既読" value={`${status.seenLocalCount}${status.seenRemoteCount !== null ? ` / DB ${status.seenRemoteCount}` : ""}`} tone={status.synced ? "green" : "blue"} />
+      </div>
+
+      {!status.synced && status.configured && status.signedIn ? (
+        <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100">
+          Supabase SQL Editorで <span className="font-black">user_news_preferences</span> テーブルとRLSを適用してください。DB未適用でもlocalStorageで利用は継続します。
+        </p>
+      ) : null}
+      {status.lastSyncedAt ? (
+        <p className="mt-3 text-xs text-slate-500">最終同期: {formatDateTime(status.lastSyncedAt)}</p>
+      ) : null}
+    </section>
   );
 }
 
