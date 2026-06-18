@@ -1,7 +1,7 @@
 import type { DailyPrice } from "@/types";
 
 export type DailyPriceValidationIssue = {
-  code: "duplicate_date" | "invalid_date" | "weekend_date" | "future_date" | "invalid_ohlc" | "extreme_jump";
+  code: "duplicate_date" | "invalid_date" | "weekend_date" | "future_date" | "invalid_ohlc" | "price_gap";
   date?: string;
   message: string;
 };
@@ -155,11 +155,10 @@ export function validateDailyPriceSeries(prices: DailyPrice[], ticker?: string):
     const previous = validated.at(-1);
     if (previous && isExtremeCloseJump(previous.close, price.close)) {
       issues.push({
-        code: "extreme_jump",
+        code: "price_gap",
         date: price.date,
-        message: `${price.date}: 前営業日比で価格が大きく乖離したため除外しました。株式分割などの場合はデータを再取得してください。`
+        message: `${price.date}: 前営業日比で価格差が大きいため、株式分割・調整済み/未調整データの混在を確認してください。OHLCは有効なためチャートには残しています。`
       });
-      continue;
     }
     validated.push(normalizeDerivedPrice(price, previous));
   }

@@ -115,6 +115,10 @@ export function TradingCandlestickChart({
   const hasIntradayVwap = visibleIntradayCandles.some((candle) => Number.isFinite(candle.vwap));
   const activeChangePercent = active ? active.changePercent : changePercent;
   const activeVolumeRatio = active && chart.volumeAverage > 0 ? active.volume / chart.volumeAverage : null;
+  const marketState = useMemo(
+    () => resolveMarketState(chartPrices, chart, showIntradayCandles ? latestIntradayCandle?.session : showIntraday ? latestIntraday?.session : null),
+    [chartPrices, chart, latestIntraday?.session, latestIntradayCandle?.session, showIntraday, showIntradayCandles]
+  );
 
   return (
     <section className="max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050505] shadow-2xl shadow-black/35 ring-1 ring-white/5">
@@ -203,6 +207,8 @@ export function TradingCandlestickChart({
           </>
         )}
       </div>
+
+      <MarketStateStrip state={marketState} />
 
       <div className="relative max-w-full overflow-hidden bg-[#020202]">
         <svg
@@ -305,8 +311,8 @@ export function TradingCandlestickChart({
               <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 36} fill="#f8fafc" fontSize="12" fontWeight="800">{formatTooltipDate(hovered.date)}</text>
               <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 58} fill="#94a3b8" fontSize="11" fontWeight="700">O {formatPrice(hovered.open)}  H {formatPrice(hovered.high)}</text>
               <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 78} fill="#94a3b8" fontSize="11" fontWeight="700">L {formatPrice(hovered.low)}  C {formatPrice(hovered.close)}</text>
-              <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 100} fill={hovered.close >= hovered.open ? "#86efac" : "#fca5a5"} fontSize="11" fontWeight="800">Vol {formatVolume(hovered.volume)}</text>
-              <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 120} fill={hovered.volume >= chart.volumeAverage * 1.5 ? "#fbbf24" : "#94a3b8"} fontSize="11" fontWeight="900">vs Avg {formatVolume(chart.volumeAverage)} / {chart.volumeAverage > 0 ? `${(hovered.volume / chart.volumeAverage).toFixed(1)}x` : "N/A"}</text>
+              <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 99} fill={hovered.close >= hovered.open ? "#86efac" : "#fca5a5"} fontSize="11" fontWeight="800">Body {formatSignedPercent(percentChange(hovered.open, hovered.close))} / Range {formatSignedPercent(percentRange(hovered.low, hovered.high, hovered.close), false)}</text>
+              <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 120} fill={hovered.volume >= chart.volumeAverage * 1.5 ? "#fbbf24" : "#94a3b8"} fontSize="11" fontWeight="900">Vol {formatVolume(hovered.volume)} / {chart.volumeAverage > 0 ? `${(hovered.volume / chart.volumeAverage).toFixed(1)}x avg` : "N/A"}</text>
             </g>
           ) : null}
           </>
@@ -357,10 +363,17 @@ function buildChart(prices: DailyPrice[], previousClose?: number | null, extende
   const finiteVolumes = prices.map((price) => price.volume).filter((volume) => Number.isFinite(volume) && volume > 0);
   const maxVolume = finiteVolumes.length ? Math.max(...finiteVolumes) : 1;
   const volumeAverage = finiteVolumes.length ? finiteVolumes.reduce((sum, volume) => sum + volume, 0) / finiteVolumes.length : 0;
-  const volumeY = (value: number) => volumeTop + (1 - Math.min(Math.max(value, 0), maxVolume) / maxVolume) * volumeHeight;
+  const volumeMedian = finiteVolumes.length ? percentile(finiteVolumes, 0.5) : 0;
+  const volumeScaleMax = Math.max(
+    1,
+    finiteVolumes.length ? percentile(finiteVolumes, 0.96) * 1.15 : 1,
+    volumeAverage * 1.8,
+    volumeMedian * 2.2
+  );
+  const volumeY = (value: number) => volumeTop + (1 - Math.min(Math.max(value, 0), volumeScaleMax) / volumeScaleMax) * volumeHeight;
   const rangeHigh = finiteHighs.length ? Math.max(...finiteHighs) : rawMax;
   const rangeLow = finiteLows.length ? Math.min(...finiteLows) : rawMin;
-  return { width, height, left, right, top, priceBottom, volumeTop, volumeBottom, volumeHeight, y, volumeY, points, step, yTicks, xTicks, rangeHigh, rangeLow, maxVolume, volumeAverage };
+  return { width, height, left, right, top, priceBottom, volumeTop, volumeBottom, volumeHeight, y, volumeY, points, step, yTicks, xTicks, rangeHigh, rangeLow, maxVolume, volumeAverage, volumeMedian, volumeScaleMax };
 }
 
 function DailyLineSvg({
@@ -438,8 +451,8 @@ function DailyLineSvg({
           <rect x={Math.min(hovered.x + 12, chart.right - 196)} y={chart.top + 12} width="194" height="112" rx="14" fill="rgba(2,6,23,0.94)" stroke="rgba(148,163,184,0.30)" />
           <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 36} fill="#f8fafc" fontSize="12" fontWeight="800">{formatTooltipDate(hovered.date)}</text>
           <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 60} fill={stroke} fontSize="15" fontWeight="900">{formatPrice(hovered.close)}</text>
-          <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 82} fill="#94a3b8" fontSize="11" fontWeight="700">Vol {formatVolume(hovered.volume)}</text>
-          <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 103} fill={hovered.volume >= chart.volumeAverage * 1.5 ? "#fbbf24" : "#94a3b8"} fontSize="11" fontWeight="900">vs Avg {chart.volumeAverage > 0 ? `${(hovered.volume / chart.volumeAverage).toFixed(1)}x` : "N/A"}</text>
+          <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 82} fill="#94a3b8" fontSize="11" fontWeight="700">Range {formatSignedPercent(percentRange(hovered.low, hovered.high, hovered.close), false)}</text>
+          <text x={Math.min(hovered.x + 28, chart.right - 156)} y={chart.top + 103} fill={hovered.volume >= chart.volumeAverage * 1.5 ? "#fbbf24" : "#94a3b8"} fontSize="11" fontWeight="900">Vol {formatVolume(hovered.volume)} / {chart.volumeAverage > 0 ? `${(hovered.volume / chart.volumeAverage).toFixed(1)}x avg` : "N/A"}</text>
         </g>
       ) : null}
     </>
@@ -714,6 +727,70 @@ function vwapLinePath(candles: TradingIntradayCandle[], chart: ReturnType<typeof
     .join(" ");
 }
 
+type MarketState = {
+  trend: { label: string; value: string; tone: "up" | "down" | "neutral" };
+  range: { label: string; value: string; tone: "up" | "down" | "neutral" };
+  volume: { label: string; value: string; tone: "up" | "down" | "neutral" };
+  session: { label: string; value: string; tone: "up" | "down" | "neutral" };
+};
+
+function resolveMarketState(
+  prices: DailyPrice[],
+  chart: ReturnType<typeof buildChart>,
+  session?: TradingIntradayCandle["session"] | TradingIntradayPoint["session"] | null
+): MarketState {
+  const first = prices[0];
+  const latest = prices[prices.length - 1];
+  const trendPercent = first && latest ? percentChange(first.close, latest.close) : 0;
+  const latestVolumeRatio = latest && chart.volumeAverage > 0 ? latest.volume / chart.volumeAverage : 0;
+  const rangePercent = latest ? percentRange(chart.rangeLow, chart.rangeHigh, latest.close) : 0;
+  const closesAboveMa20 = prices.slice(-5).filter((price) => Number.isFinite(price.ma20) && price.close >= price.ma20).length;
+  const trendTone = trendPercent > 0.4 ? "up" : trendPercent < -0.4 ? "down" : "neutral";
+  const volumeTone = latestVolumeRatio >= 1.5 ? "up" : latestVolumeRatio > 0 && latestVolumeRatio < 0.7 ? "down" : "neutral";
+
+  return {
+    trend: {
+      label: "Trend",
+      value: `${formatSignedPercent(trendPercent)}${closesAboveMa20 >= 4 ? " / MA20+" : ""}`,
+      tone: trendTone
+    },
+    range: {
+      label: "Range",
+      value: rangePercent > 0 ? `${rangePercent.toFixed(1)}% band` : "-",
+      tone: rangePercent >= 8 ? "up" : rangePercent <= 2 && rangePercent > 0 ? "neutral" : "neutral"
+    },
+    volume: {
+      label: "Volume",
+      value: latestVolumeRatio > 0 ? `${latestVolumeRatio.toFixed(1)}x avg` : "N/A",
+      tone: volumeTone
+    },
+    session: {
+      label: "Session",
+      value: session === "extended" ? "Extended" : session === "regular" ? "Regular" : "Daily",
+      tone: session === "extended" ? "neutral" : trendTone
+    }
+  };
+}
+
+function MarketStateStrip({ state }: { state: MarketState }) {
+  return (
+    <div className="grid grid-cols-2 gap-px border-b border-white/10 bg-white/10 text-xs sm:grid-cols-4">
+      {Object.values(state).map((item) => (
+        <div key={item.label} className="min-w-0 bg-[#050505] px-4 py-3 sm:px-5">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
+          <p className={`mt-1 truncate font-black tabular-nums ${stateToneClass(item.tone)}`}>{item.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function stateToneClass(tone: "up" | "down" | "neutral") {
+  if (tone === "up") return "text-emerald-300";
+  if (tone === "down") return "text-rose-300";
+  return "text-slate-100";
+}
+
 function RangeLine({
   chart,
   value,
@@ -740,10 +817,17 @@ function RangeLine({
 
 function VolumeProfile({ chart }: { chart: ReturnType<typeof buildChart> }) {
   const averageY = chart.volumeAverage > 0 ? chart.volumeY(chart.volumeAverage) : null;
+  const heavyVolumeY = chart.volumeAverage > 0 ? chart.volumeY(chart.volumeAverage * 1.5) : null;
 
   return (
     <g>
       <rect x={chart.left} y={chart.volumeTop} width={chart.right - chart.left} height={chart.volumeHeight} rx="12" fill="rgba(15,23,42,0.18)" stroke="rgba(148,163,184,0.08)" />
+      {heavyVolumeY ? (
+        <g>
+          <line x1={chart.left} x2={chart.right} y1={heavyVolumeY} y2={heavyVolumeY} stroke="rgba(20,184,166,0.42)" strokeDasharray="2 7" />
+          <text x={chart.left + 72} y={heavyVolumeY - 5} fill="#5eead4" fontSize="10" fontWeight="900" textAnchor="middle">1.5x VOL</text>
+        </g>
+      ) : null}
       {averageY ? (
         <g>
           <line x1={chart.left} x2={chart.right} y1={averageY} y2={averageY} stroke="rgba(251,191,36,0.72)" strokeDasharray="5 5" />
@@ -752,7 +836,7 @@ function VolumeProfile({ chart }: { chart: ReturnType<typeof buildChart> }) {
         </g>
       ) : null}
       <text x={chart.left + 10} y={chart.volumeTop + 18} fill="#94a3b8" fontSize="11" fontWeight="900">Volume</text>
-      <text x={chart.right - 8} y={chart.volumeTop + 18} fill="#64748b" fontSize="10" fontWeight="900" textAnchor="end">Max {formatVolume(chart.maxVolume)}</text>
+      <text x={chart.right - 8} y={chart.volumeTop + 18} fill="#64748b" fontSize="10" fontWeight="900" textAnchor="end">Max {formatVolume(chart.maxVolume)} / Avg {formatVolume(chart.volumeAverage)}</text>
       {chart.points.map((point) => {
         const up = point.close >= point.open;
         const candleWidth = candleBodyWidth(chart.points.length, chart.step);
@@ -761,6 +845,7 @@ function VolumeProfile({ chart }: { chart: ReturnType<typeof buildChart> }) {
         const barHeight = Math.max(1.5, chart.volumeBottom - barY);
         const relativeVolume = chart.volumeAverage > 0 ? point.volume / chart.volumeAverage : 0;
         const isHeavyVolume = relativeVolume >= 1.5;
+        const isClipped = point.volume > chart.volumeScaleMax;
         const fill = up
           ? isHeavyVolume ? "rgba(74,222,128,0.78)" : "rgba(34,197,94,0.38)"
           : isHeavyVolume ? "rgba(251,113,133,0.78)" : "rgba(244,63,94,0.38)";
@@ -779,6 +864,7 @@ function VolumeProfile({ chart }: { chart: ReturnType<typeof buildChart> }) {
               />
             ) : null}
             <rect x={point.x - barWidth / 2} y={barY} width={barWidth} height={barHeight} rx="2.5" fill={fill} />
+            {isClipped ? <circle cx={point.x} cy={chart.volumeTop + 5} r="2.6" fill="#fde68a" /> : null}
           </g>
         );
       })}
@@ -855,6 +941,29 @@ function formatTooltipDate(value: string) {
   const [year, month, day] = value.split("-");
   if (year && month && day) return `${year}/${month}/${day}`;
   return value;
+}
+
+function percentChange(from: number, to: number) {
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0) return 0;
+  return ((to - from) / from) * 100;
+}
+
+function percentRange(low: number, high: number, close: number) {
+  if (!Number.isFinite(low) || !Number.isFinite(high) || !Number.isFinite(close) || close <= 0) return 0;
+  return ((high - low) / close) * 100;
+}
+
+function formatSignedPercent(value: number, showSign = true) {
+  if (!Number.isFinite(value)) return "-";
+  const sign = showSign && value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function percentile(values: number[], percentileValue: number) {
+  const sorted = values.filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return 0;
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * percentileValue)));
+  return sorted[index];
 }
 
 function trimNumber(value: number, maximumFractionDigits: number) {

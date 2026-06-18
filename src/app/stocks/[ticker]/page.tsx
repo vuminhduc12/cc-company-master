@@ -67,6 +67,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const displayClose = realtimeQuote?.regular.price ?? latest?.close;
   const displayChangePercent = realtimeQuote?.regular.changePercent ?? latest?.changePercent ?? 0;
   const latestPriceText = displayClose ? formatStockPrice(displayClose, stock) : "-";
+  const regularPreviousClose = realtimeQuote?.regular.previousClose ?? mergedPrices[mergedPrices.length - 2]?.close ?? watchItem?.previousClose ?? null;
   const tickerNews = live?.news?.length
     ? live.news
     : activeHistoryData?.news?.length
@@ -250,7 +251,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       ) : null}
       {priceValidation.issues.length ? (
         <div className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
-          Data Quality Warning: 日足データを検証し、{priceValidation.issues.length}件の不整合を除外/補正しました。
+          Data Quality Warning: 日足データを検証し、確認が必要な品質項目を{priceValidation.issues.length}件検出しました。
           <ul className="mt-2 list-disc space-y-1 pl-5">
             {priceValidation.issues.slice(0, 3).map((issue, index) => (
               <li key={`${issue.code}-${issue.date ?? index}`}>{issue.message}</li>
@@ -316,6 +317,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           ticker={stock.ticker}
           intraday={realtimeQuote?.intraday ?? []}
           intradayCandles={realtimeQuote?.intradayCandles ?? []}
+          previousClose={regularPreviousClose}
         />
       </section>
 

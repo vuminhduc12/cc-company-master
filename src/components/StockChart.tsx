@@ -20,9 +20,11 @@ type StockChartProps = {
   ticker?: string;
   intraday?: TradingIntradayPoint[];
   intradayCandles?: TradingIntradayCandle[];
+  previousClose?: number | null;
+  extendedPrice?: number | null;
 };
 
-export function StockChart({ prices, ticker = "RGTI", intraday = [], intradayCandles = [] }: StockChartProps) {
+export function StockChart({ prices, ticker = "RGTI", intraday = [], intradayCandles = [], previousClose, extendedPrice }: StockChartProps) {
   const [rsiRangeLabel, setRsiRangeLabel] = useState<(typeof rsiRanges)[number]["label"]>("3M");
   const visibleRsi = useMemo(() => filterDailyPrices(prices, rsiRangeLabel), [prices, rsiRangeLabel]);
   const hasLiveCandles = intradayCandles.length >= 2;
@@ -36,6 +38,8 @@ export function StockChart({ prices, ticker = "RGTI", intraday = [], intradayCan
         intradayCandles={intradayCandles}
         defaultRange={hasLiveCandles ? "1m" : "3M"}
         height={500}
+        previousClose={previousClose}
+        extendedPrice={extendedPrice}
         subtitle={hasLiveCandles ? "Realtime 1m OHLC / VWAP" : "MA20 / MA50 / Volume"}
       />
 

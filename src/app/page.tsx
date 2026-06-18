@@ -434,7 +434,7 @@ export default function DashboardPage() {
       ) : null}
       {priceValidation.issues.length ? (
         <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
-          Data Quality Warning: {selectedItem.stock.ticker}の日足データを検証し、{priceValidation.issues.length}件の不整合を除外/補正しました。
+          Data Quality Warning: {selectedItem.stock.ticker}の日足データを検証し、確認が必要な品質項目を{priceValidation.issues.length}件検出しました。
           <span className="mt-1 block text-xs text-yellow-200/80">{priceValidation.issues[0].message}</span>
         </section>
       ) : null}
@@ -530,6 +530,8 @@ export default function DashboardPage() {
             ticker={selectedItem.stock.ticker}
             intraday={realtimeQuote?.intraday ?? []}
             intradayCandles={realtimeQuote?.intradayCandles ?? []}
+            previousClose={regularPreviousClose}
+            extendedPrice={hasExtendedPrice ? realtimeQuote?.extended?.price ?? null : null}
           />
         </div>
 
