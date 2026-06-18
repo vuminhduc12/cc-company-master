@@ -8,9 +8,10 @@ import { NewsCard } from "@/components/NewsCard";
 import { HeaderPill, PageHeader } from "@/components/PageHeader";
 import { news } from "@/lib/mock-data";
 import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
+import { newsPreferencesChangedEvent, readNewsPreferenceKeys } from "@/lib/news-preferences";
 import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
-import { hiddenNewsStorageKey, hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
+import { hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import type { NewsItem, WatchlistItem } from "@/types";
 
@@ -67,6 +68,15 @@ function NewsPageContent() {
       setSelectedTicker(highlightedTicker);
     }
   }, [searchParams, tickerTabs]);
+
+  useEffect(() => {
+    function handlePreferencesChanged() {
+      setHiddenNews(readNewsPreferenceKeys("hidden"));
+    }
+
+    window.addEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
+    return () => window.removeEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -238,13 +248,5 @@ function financeUrl(ticker: string, visibleWatchlist: WatchlistItem[]) {
 }
 
 function readHiddenNewsKeys() {
-  if (typeof window === "undefined") return new Set<string>();
-  const stored = localStorage.getItem(hiddenNewsStorageKey);
-  if (!stored) return new Set<string>();
-  try {
-    const parsed = JSON.parse(stored) as unknown;
-    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
-  } catch {
-    return new Set<string>();
-  }
+  return readNewsPreferenceKeys("hidden");
 }

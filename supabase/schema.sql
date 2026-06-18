@@ -171,6 +171,42 @@ create policy "watchlist_items_delete_own"
   on public.watchlist_items for delete
   using (auth.uid() = user_id);
 
+create table if not exists public.user_news_preferences (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  preference_type text not null check (preference_type in ('hidden', 'seen')),
+  news_key text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, preference_type, news_key)
+);
+
+create index if not exists user_news_preferences_user_type_idx
+  on public.user_news_preferences (user_id, preference_type, updated_at desc);
+
+alter table public.user_news_preferences enable row level security;
+
+drop policy if exists "user_news_preferences_select_own" on public.user_news_preferences;
+create policy "user_news_preferences_select_own"
+  on public.user_news_preferences for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "user_news_preferences_insert_own" on public.user_news_preferences;
+create policy "user_news_preferences_insert_own"
+  on public.user_news_preferences for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "user_news_preferences_update_own" on public.user_news_preferences;
+create policy "user_news_preferences_update_own"
+  on public.user_news_preferences for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "user_news_preferences_delete_own" on public.user_news_preferences;
+create policy "user_news_preferences_delete_own"
+  on public.user_news_preferences for delete
+  using (auth.uid() = user_id);
+
 create table if not exists public.user_plans (
   user_id uuid primary key references auth.users(id) on delete cascade,
   plan text not null default 'free' check (plan in ('free', 'pro', 'premium')),

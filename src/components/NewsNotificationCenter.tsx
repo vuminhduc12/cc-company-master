@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { filterFreshNews, freshNewsWindowDays } from "@/lib/news-freshness";
+import { addNewsPreferenceKeys, newsPreferencesChangedEvent, readNewsPreferenceKeys } from "@/lib/news-preferences";
 import { newsIdentity } from "@/lib/use-ai-job-result";
 import type { AiJobResult, NewsItem } from "@/types";
-
-const seenNewsStorageKey = "d-finance-seen-news-notifications";
 
 export function NewsNotificationCenter({
   jobResult,
@@ -16,7 +15,7 @@ export function NewsNotificationCenter({
   layout?: "desktop" | "mobile";
 }) {
   const [open, setOpen] = useState(false);
-  const [seenKeys, setSeenKeys] = useState<Set<string>>(() => readSeenNewsKeys());
+  const [seenKeys, setSeenKeys] = useState<Set<string>>(() => readNewsPreferenceKeys("seen"));
   const latestNews = useMemo(() => normalizeLatestNews(filterFreshNews(jobResult?.news ?? [])), [jobResult?.news]);
   const unreadItems = latestNews.filter((item) => !seenKeys.has(newsIdentity(item)));
   const featured = latestNews[0] ?? null;
@@ -28,8 +27,20 @@ export function NewsNotificationCenter({
   const isMobile = layout === "mobile";
 
   useEffect(() => {
-    setSeenKeys(readSeenNewsKeys());
+    setSeenKeys(readNewsPreferenceKeys("seen"));
   }, [jobResult?.lastRun]);
+
+  useEffect(() => {
+    function handlePreferencesChanged(event: Event) {
+      const detail = (event as CustomEvent<{ type?: string }>).detail;
+      if (!detail?.type || detail.type === "seen") {
+        setSeenKeys(readNewsPreferenceKeys("seen"));
+      }
+    }
+
+    window.addEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
+    return () => window.removeEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
+  }, []);
 
   function toggleOpen() {
     const nextOpen = !open;
@@ -37,8 +48,8 @@ export function NewsNotificationCenter({
     if (nextOpen && latestNews.length) {
       const nextKeys = new Set(seenKeys);
       latestNews.slice(0, 6).forEach((item) => nextKeys.add(newsIdentity(item)));
-      writeSeenNewsKeys(nextKeys);
       setSeenKeys(nextKeys);
+      void addNewsPreferenceKeys("seen", nextKeys);
     }
   }
 
@@ -139,22 +150,6 @@ function normalizeLatestNews(items: NewsItem[]) {
       return true;
     })
     .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-}
-
-function readSeenNewsKeys() {
-  if (typeof window === "undefined") return new Set<string>();
-  const stored = localStorage.getItem(seenNewsStorageKey);
-  if (!stored) return new Set<string>();
-  try {
-    const parsed = JSON.parse(stored) as unknown;
-    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
-  } catch {
-    return new Set<string>();
-  }
-}
-
-function writeSeenNewsKeys(keys: Set<string>) {
-  localStorage.setItem(seenNewsStorageKey, JSON.stringify([...keys].slice(-300)));
 }
 
 function sentimentClass(sentiment: NewsItem["sentiment"]) {

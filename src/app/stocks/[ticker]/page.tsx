@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 import Link from "next/link";
 import { DataTable } from "@/components/DataTable";
+import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForStock, marketForWatchItem } from "@/components/MarketControls";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
@@ -93,6 +94,43 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     neutral: tickerNews.filter((newsItem) => newsItem.sentiment === "Neutral").length,
     negative: tickerNews.filter((newsItem) => newsItem.sentiment === "Negative").length
   };
+  const dataQualityItems: DataQualityItem[] = [
+    {
+      label: "Realtime",
+      source: realtimeQuote?.source ?? "未取得",
+      asOf: realtimeQuote?.regular.asOf ?? realtimeQuote?.fetchedAt,
+      tone: realtimeQuote ? freshnessTone(realtimeQuote.regular.asOf, 20, 120) : "fallback",
+      detail: "表示価格とリアルタイム日次反映に使用します。"
+    },
+    {
+      label: "Daily History",
+      source: sourceLabel,
+      asOf: activeHistoryData?.fetchedAt ?? latest?.date,
+      tone: isWatchlistFallbackOnly || resolvedPrices?.rejectedLive || priceValidation.issues.length ? "warning" : activeHistoryData ? freshnessTone(activeHistoryData.fetchedAt, 24 * 60, 7 * 24 * 60) : "fallback",
+      detail: "チャート、テクニカル、判断パネルの計算元です。"
+    },
+    {
+      label: "News",
+      source: live?.news?.length ? "AI Job analyzed news" : activeHistoryData?.news?.length ? "History API news" : "Local news",
+      asOf: latestNewsDate(tickerNews),
+      tone: tickerNews.length ? freshnessTone(latestNewsDate(tickerNews), 3 * 24 * 60, 7 * 24 * 60) : "fallback",
+      detail: `${tickerNews.length}件。ニュースが古い場合は材料判断を低信頼として扱います。`
+    },
+    {
+      label: "AI Analysis",
+      source: live ? "AI Job result" : jobResult ? "AI Job partial" : "未実行",
+      asOf: jobResult?.lastRun,
+      tone: live?.error || jobResult?.error ? "error" : live?.warning || activeHistoryData?.warning ? "warning" : jobResult ? "fresh" : "fallback",
+      detail: "AIコメントは投資助言ではなく、価格・ニュース・履歴に基づく参考情報です。"
+    }
+  ];
+  const dataQualityWarnings = [
+    live?.error ?? jobResult?.error ?? "",
+    live?.warning ?? activeHistoryData?.warning ?? "",
+    isWatchlistFallbackOnly ? `${stock.ticker}はWatchlist保存価格で暫定表示しています。` : "",
+    resolvedPrices?.rejectedLive ? `API価格が検証済み履歴と大きく異なるため、${stock.ticker}はローカル履歴を優先表示しています。` : "",
+    priceValidation.issues[0]?.message ?? ""
+  ];
 
   useEffect(() => {
     const sections = decisionNavItems
@@ -220,6 +258,8 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           </ul>
         </div>
       ) : null}
+
+      <DataQualityPanel items={dataQualityItems} warnings={dataQualityWarnings} />
 
       <section className="grid gap-4 md:grid-cols-4">
         <InsightCard label="最新終値" value={latestPriceText} />
@@ -660,6 +700,14 @@ function ScoreCell({ value }: { value: number }) {
   if (value >= 6) return <Pill className="border-sky-300/40 bg-sky-300/15 text-sky-200">{value}</Pill>;
   if (value >= 4) return <Pill className="border-yellow-300/40 bg-yellow-300/15 text-yellow-200">{value}</Pill>;
   return <Pill className="border-slate-400/30 bg-slate-400/10 text-slate-300">{value}</Pill>;
+}
+
+function latestNewsDate(items: { publishedAt: string }[]) {
+  const dates = items
+    .map((item) => item.publishedAt)
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a));
+  return dates[0] ?? null;
 }
 
 function PatternCell({ pattern, score, high20Breakout }: { pattern: string; score: number; high20Breakout: string }) {

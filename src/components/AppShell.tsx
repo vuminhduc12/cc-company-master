@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NewsNotificationCenter } from "@/components/NewsNotificationCenter";
+import { useNewsPreferencesSync } from "@/lib/news-preferences";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 
 const links = [
@@ -23,6 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [today, setToday] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const aiStatus = resolveAiStatus(jobResult?.status);
+  useNewsPreferencesSync();
 
   useEffect(() => {
     function updateToday() {

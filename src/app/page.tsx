@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
 import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { DataTable } from "@/components/DataTable";
+import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
 import { FinanceDashboardChart, type IntradayCandle, type IntradayPoint } from "@/components/FinanceDashboardChart";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForWatchItem } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
@@ -132,6 +133,43 @@ export default function DashboardPage() {
   const quoteCurrency = realtimeQuote?.regular.currency ?? currencyForTicker(selectedItem.stock.ticker);
   const hasExtendedPrice = Boolean(realtimeQuote?.extended?.price);
   const selectedFinanceUrl = `https://www.google.com/finance/quote/${encodeURIComponent(selectedItem.stock.ticker)}:${encodeURIComponent(selectedItem.stock.exchange)}`;
+  const dataQualityItems: DataQualityItem[] = [
+    {
+      label: "Realtime",
+      source: realtimeQuote?.source ?? "未取得",
+      asOf: realtimeQuote?.regular.asOf ?? realtimeQuote?.fetchedAt,
+      tone: quoteError ? "error" : realtimeQuote ? freshnessTone(realtimeQuote.regular.asOf, 20, 120) : "fallback",
+      detail: quoteError ? "リアルタイム価格の取得に失敗しました。" : "通常取引価格をYahoo Finance realtimeから取得します。"
+    },
+    {
+      label: "Daily History",
+      source: activeHistoryData?.sourceLabel ?? resolvedPrices.source,
+      asOf: activeHistoryData?.fetchedAt ?? latest.date,
+      tone: resolvedPrices.rejectedLive || priceValidation.issues.length ? "warning" : activeHistoryData ? freshnessTone(activeHistoryData.fetchedAt, 24 * 60, 7 * 24 * 60) : "fallback",
+      detail: "日足OHLCVはチャート、テクニカル、スコア計算に使用します。"
+    },
+    {
+      label: "News",
+      source: selectedLive?.news?.length ? "AI Job analyzed news" : activeHistoryData?.news?.length ? "History API news" : "Local news",
+      asOf: latestNewsDate(selectedNews),
+      tone: selectedNews.length ? freshnessTone(latestNewsDate(selectedNews), 3 * 24 * 60, 7 * 24 * 60) : "fallback",
+      detail: `${selectedNews.length}件。ニュース不足時は材料判断の信頼度を下げて見てください。`
+    },
+    {
+      label: "AI Analysis",
+      source: jobResult ? "OpenAI / rule fallback audit" : "未実行",
+      asOf: jobResult?.lastRun,
+      tone: jobResult?.error ? "error" : jobResult?.warning ? "warning" : jobResult ? "fresh" : "fallback",
+      detail: "AI判断は参考情報です。価格・ニュース鮮度が低い場合は信頼度を下げます。"
+    }
+  ];
+  const dataQualityWarnings = [
+    quoteError ? `Realtime: ${quoteError}` : "",
+    jobResult?.warning ? `AI Job: ${jobResult.warning}` : "",
+    resolvedPrices.rejectedLive ? `API価格が検証済み履歴と大きく異なるため、${selectedItem.stock.ticker}はローカル履歴を優先表示しています。` : "",
+    activeHistoryData?.warning ? `History: ${activeHistoryData.warning}` : "",
+    priceValidation.issues[0]?.message ?? ""
+  ];
 
   function changeDashboardList(nextListId: string) {
     setDashboardListId(nextListId);
@@ -410,6 +448,8 @@ export default function DashboardPage() {
           History Notice: {selectedItem.stock.ticker}の日足履歴を取得できなかったため、Watchlist保存価格で暫定表示しています。{historyError}
         </section>
       ) : null}
+
+      <DataQualityPanel items={dataQualityItems} warnings={dataQualityWarnings} />
 
       <section>
         <SectionTitle title="AI Execution Visibility" note="AI実行履歴、データ鮮度、429時のルール分析切替を銘柄ごとに確認" />
@@ -779,6 +819,14 @@ function formatDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function latestNewsDate(items: NewsItem[]) {
+  const dates = items
+    .map((item) => item.publishedAt)
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a));
+  return dates[0] ?? null;
 }
 
 function Metric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "green" | "red" | "yellow" | "blue" }) {

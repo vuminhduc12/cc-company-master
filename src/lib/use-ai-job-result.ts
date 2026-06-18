@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { hiddenNewsStorageKey, readNewsPreferenceKeys, addNewsPreferenceKeys } from "@/lib/news-preferences";
 import { loadLatestJobResult } from "@/lib/supabase";
 import type { AiJobResult, NewsItem } from "@/types";
 
 const storageKey = "d-finance-ai-job-result";
-const hiddenNewsStorageKey = "d-finance-hidden-news";
 
 export function useAiJobResult() {
   const [jobResult, setJobResult] = useState<AiJobResult | null>(null);
@@ -88,6 +88,7 @@ export function hideNewsItem(item: NewsItem) {
   const keys = readHiddenNewsKeys();
   keys.add(newsIdentity(item));
   localStorage.setItem(hiddenNewsStorageKey, JSON.stringify([...keys]));
+  void addNewsPreferenceKeys("hidden", [newsIdentity(item)]);
 
   const stored = localStorage.getItem(storageKey);
   if (!stored) return;
@@ -112,15 +113,7 @@ function filterHiddenNews(result: AiJobResult, hiddenKeys = readHiddenNewsKeys()
 }
 
 function readHiddenNewsKeys() {
-  if (typeof window === "undefined") return new Set<string>();
-  const stored = localStorage.getItem(hiddenNewsStorageKey);
-  if (!stored) return new Set<string>();
-  try {
-    const parsed = JSON.parse(stored) as unknown;
-    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
-  } catch {
-    return new Set<string>();
-  }
+  return readNewsPreferenceKeys("hidden");
 }
 
 export { hiddenNewsStorageKey, storageKey };
