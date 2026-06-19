@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 type SparklineProps = {
   prices: number[];
   width?: number;
@@ -13,6 +15,10 @@ export function Sparkline({
   height = 32,
   className = "",
 }: SparklineProps) {
+  // useId() はサーバー/クライアントで同一の値を生成する → hydration ミスマッチを防ぐ
+  const uid = useId();
+  const fillId = `spark-fill-${uid.replace(/:/g, "")}`;
+
   if (!prices || prices.length < 2) {
     return <div style={{ width, height }} className={`flex items-center justify-center text-[10px] text-slate-600 ${className}`}>—</div>;
   }
@@ -36,7 +42,6 @@ export function Sparkline({
 
   const isUp = (pts[pts.length - 1] ?? 0) >= (pts[0] ?? 0);
   const stroke = isUp ? "#34d399" : "#f87171";
-  const fillId = `spark-fill-${Math.random().toString(36).slice(2, 7)}`;
 
   // Closed area path for gradient fill
   const areaPath =
