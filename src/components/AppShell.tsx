@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NewsNotificationCenter } from "@/components/NewsNotificationCenter";
+import { QuickAiJobButton } from "@/components/QuickAiJobButton";
 import { useNewsPreferencesSync } from "@/lib/news-preferences";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 
@@ -16,6 +17,36 @@ const links = [
   ["/reports", "Reports"],
   ["/margin-simulator", "Margin Simulator"],
   ["/settings", "Settings"]
+];
+
+// モバイルボトムナビ（主要5ページ）
+const bottomNavLinks = [
+  { href: "/", label: "ホーム", icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="size-5">
+      <path d="M10.707 2.293a1 1 0 0 0-1.414 0l-7 7A1 1 0 0 0 3 11h1v6a1 1 0 0 0 1 1h4v-4h2v4h4a1 1 0 0 0 1-1v-6h1a1 1 0 0 0 .707-1.707l-7-7z" />
+    </svg>
+  )},
+  { href: "/watchlist", label: "Watch", icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="size-5">
+      <path d="M5 3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5zm0 8a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H5zm6-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2V5zm2 8a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-2z" />
+    </svg>
+  )},
+  { href: "/news", label: "News", icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="size-5">
+      <path fillRule="evenodd" d="M2 5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5zm3 1h6v4H5V6zm6 6H5v2h6v-2z" clipRule="evenodd" />
+      <path d="M15 7h1a2 2 0 0 1 2 2v5.5a1.5 1.5 0 0 1-3 0V7z" />
+    </svg>
+  )},
+  { href: "/ai-employees", label: "AI", icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="size-5">
+      <path fillRule="evenodd" d="M9.504 1.132a1 1 0 0 1 .992 0l1.75 1a1 1 0 1 1-.992 1.736L10 3.152l-1.254.716a1 1 0 1 1-.992-1.736l1.75-1zM5.618 4.504a1 1 0 0 1-.372 1.364L5.016 6l.23.132a1 1 0 1 1-.992 1.736L4 7.723V8a1 1 0 0 1-2 0V6a.996.996 0 0 1 .52-.878l1.734-.99a1 1 0 0 1 1.364.372zm8.764 0a1 1 0 0 1 1.364-.372l1.733.99A1.002 1.002 0 0 1 18 6v2a1 1 0 0 1-2 0v-.277l-.254.145a1 1 0 1 1-.992-1.736l.23-.132-.23-.132a1 1 0 0 1-.372-1.364zm-7 4a1 1 0 0 1 1.364-.372L10 8.848l1.254-.716a1 1 0 1 1 .992 1.736L11 10.58V12a1 1 0 0 1-2 0v-1.42l-1.246-.712a1 1 0 0 1-.372-1.364zM3 11a1 1 0 0 1 1 1v.277l.254-.145a1 1 0 0 1 .992 1.736l-.23.132.23.132a1 1 0 1 1-.992 1.736l-1.733-.99A1.002 1.002 0 0 1 2 14v-2a1 1 0 0 1 1-1zm14 0a1 1 0 0 1 1 1v2a1.002 1.002 0 0 1-.52.878l-1.734.99a1 1 0 1 1-.992-1.736l.23-.132-.23-.132a1 1 0 0 1 .992-1.736l.254.145V12a1 1 0 0 1 1-1zm-9.618 5.504a1 1 0 0 1 .372-1.364L9 14.848l1.246.712a1 1 0 1 1-.992 1.736l-1.75-1a1 1 0 0 1-.122-.792z" clipRule="evenodd" />
+    </svg>
+  )},
+  { href: "/settings", label: "設定", icon: (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="size-5">
+      <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clipRule="evenodd" />
+    </svg>
+  )},
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -110,6 +141,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </button>
             <div className="hidden items-center gap-2 lg:flex">
+              <QuickAiJobButton />
               <NewsNotificationCenter jobResult={jobResult} />
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">Free プラン</span>
             </div>
@@ -174,7 +206,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : null}
         </div>
       </header>
-      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+      {/* モバイルコンテンツ：ボトムナビ分の余白 */}
+      <main className="mx-auto max-w-[1600px] px-4 py-6 pb-24 sm:px-6 lg:py-8 lg:pb-8">{children}</main>
+
+      {/* ─── モバイル ボトムナビゲーション ─────────────────────────────── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-black/90 backdrop-blur-xl lg:hidden safe-bottom">
+        <div className="flex h-16 items-stretch">
+          {bottomNavLinks.map(({ href, label, icon }) => {
+            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-bold transition-colors ${
+                  active
+                    ? "text-teal-300"
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                <span className={`transition-transform ${active ? "scale-110" : ""}`}>
+                  {icon}
+                </span>
+                <span>{label}</span>
+                {active && (
+                  <span className="absolute bottom-0 h-0.5 w-8 rounded-full bg-teal-300" />
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }

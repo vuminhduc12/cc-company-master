@@ -183,16 +183,31 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Stock Detail</p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-50 sm:text-4xl">{stock.ticker}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <h2 className="text-3xl font-black tracking-tight text-slate-50 sm:text-4xl">{stock.ticker}</h2>
+              <ScoreBadge score={scoreAnalysis.score} pattern={latest.pattern} />
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
               <MarketBadge market={marketForStock(stock)} />
               <span>{stock.companyName} / {stock.exchange}</span>
+            </div>
+            {/* キーメトリクスピル */}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <MetricPill label="RSI" value={latest.rsi.toFixed(0)} tone={latest.rsi >= 70 ? "red" : latest.rsi <= 35 ? "green" : "neutral"} />
+              <MetricPill label="MACD" value={latest.macdDirection} tone={latest.macdDirection === "上昇" ? "green" : "red"} />
+              <MetricPill label="出来高比" value={`${latest.volumeRatio.toFixed(1)}x`} tone={latest.volumeRatio >= 1.5 ? "green" : latest.volumeRatio < 0.7 ? "red" : "neutral"} />
+              {latest.high20Breakout && (
+                <MetricPill label="🚀" value={latest.high20Breakout} tone="green" />
+              )}
             </div>
           </div>
           <div className="grid min-w-0 gap-2 text-left sm:grid-cols-2 sm:text-right lg:grid-cols-1">
             <div className={displayChangePercent >= 0 ? "text-sky-300" : "text-red-300"}>
               <p className="text-3xl font-black">{latestPriceText}</p>
               <p className="text-sm font-bold">{displayChangePercent >= 0 ? "+" : ""}{displayChangePercent.toFixed(2)}%</p>
+              {regularPreviousClose && (
+                <p className="mt-0.5 text-xs text-slate-500">前日終値 {formatStockPrice(regularPreviousClose, stock)}</p>
+              )}
             </div>
             <div className="break-words rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
               Source: {sourceLabel}
@@ -713,6 +728,41 @@ function ScoreCell({ value }: { value: number }) {
   if (value >= 6) return <Pill className="border-sky-300/40 bg-sky-300/15 text-sky-200">{value}</Pill>;
   if (value >= 4) return <Pill className="border-yellow-300/40 bg-yellow-300/15 text-yellow-200">{value}</Pill>;
   return <Pill className="border-slate-400/30 bg-slate-400/10 text-slate-300">{value}</Pill>;
+}
+
+// ─── スコアバッジ（ヘッダー用）───────────────────────────────────────────
+function ScoreBadge({ score, pattern }: { score: number; pattern: string }) {
+  const stars = "★".repeat(score) + "☆".repeat(Math.max(0, 6 - score));
+  const label = pattern || (score >= 5 ? "上昇候補" : score <= 2 ? "リスク監視" : "中立");
+  const cls =
+    score >= 5
+      ? "border-emerald-400/50 bg-emerald-400/15 text-emerald-200 shadow-emerald-950/30"
+      : score >= 4
+        ? "border-sky-300/40 bg-sky-300/10 text-sky-200 shadow-sky-950/30"
+        : score >= 3
+          ? "border-yellow-300/35 bg-yellow-300/10 text-yellow-200 shadow-yellow-950/30"
+          : "border-red-400/35 bg-red-400/10 text-red-200 shadow-red-950/30";
+  return (
+    <div className={`inline-flex flex-col items-center rounded-xl border px-3 py-1.5 shadow-lg ${cls}`}>
+      <span className="text-[11px] tracking-wider">{stars}</span>
+      <span className="text-[11px] font-black uppercase tracking-wide">{score}/6 — {label}</span>
+    </div>
+  );
+}
+
+// ─── メトリクスピル（ヘッダー用）────────────────────────────────────────
+function MetricPill({ label, value, tone }: { label: string; value: string; tone: "green" | "red" | "neutral" }) {
+  const cls =
+    tone === "green"
+      ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200"
+      : tone === "red"
+        ? "border-red-300/30 bg-red-300/10 text-red-200"
+        : "border-white/10 bg-white/5 text-slate-400";
+  return (
+    <span className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold ${cls}`}>
+      <span className="text-[10px] font-normal opacity-70">{label} </span>{value}
+    </span>
+  );
 }
 
 function latestNewsDate(items: { publishedAt: string }[]) {
