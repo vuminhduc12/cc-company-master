@@ -1,6 +1,7 @@
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { getPricesForTicker } from "@/lib/mock-data";
 import { loadSavedPricesForTicker } from "@/lib/supabase";
+import { fetchTwelveDataHistory, hasTwelveDataKey } from "@/lib/twelve-data";
 import type { DailyPrice } from "@/types";
 
 type RawDailyPrice = {
@@ -13,7 +14,7 @@ type RawDailyPrice = {
 };
 
 type StockDataMode = "live" | "mock";
-type StockDataProvider = "yahoo" | "alpha_vantage";
+type StockDataProvider = "yahoo" | "alpha_vantage" | "twelve_data";
 type FetchAttempt = {
   result: StockDataResult | null;
   error?: string;
@@ -33,6 +34,19 @@ export async function fetchStockData(ticker: string): Promise<StockDataResult> {
   const warnings: string[] = [];
   const errors: string[] = [];
 
+  // ① Twelve Data（公式無料枠 800 credits/日、TWELVE_DATA_KEY が設定されている場合優先）
+  if (hasTwelveDataKey()) {
+    try {
+      const result = await fetchTwelveDataHistory(ticker);
+      return result;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      errors.push(`Twelve Data: ${msg}`);
+      warnings.push(`${ticker}: Twelve Dataから取得できませんでした。次の手段を試みます。`);
+    }
+  }
+
+  // ② Yahoo Finance（非公式・バックアップ）
   const yahooAttempt = await tryFetchYahooFinanceStockData(ticker);
   if (yahooAttempt.result) return yahooAttempt.result;
   if (yahooAttempt.error) errors.push(`Yahoo Finance: ${yahooAttempt.error}`);

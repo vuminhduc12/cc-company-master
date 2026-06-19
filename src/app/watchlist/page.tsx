@@ -28,7 +28,7 @@ import { planDefinitions, type PlanDefinition } from "@/lib/plans";
 type WatchlistLookupResult = {
   ok: true;
   mode: "live" | "mock";
-  provider: "yahoo" | "alpha_vantage" | "saved" | "local";
+  provider: "yahoo" | "alpha_vantage" | "twelve_data" | "saved" | "local";
   stock: Stock;
   price: DailyPrice;
   previousClose: number;

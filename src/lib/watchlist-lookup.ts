@@ -8,7 +8,7 @@ export type SearchMarket = "us" | "jp";
 export type WatchlistLookupPayload = {
   ok: true;
   mode: "live" | "mock";
-  provider: "yahoo" | "alpha_vantage" | "saved" | "local";
+  provider: "yahoo" | "alpha_vantage" | "twelve_data" | "saved" | "local";
   stock: Stock;
   prices: DailyPrice[];
   price: DailyPrice;

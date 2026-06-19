@@ -32,7 +32,7 @@ export type StockHistoryResult = {
   score: number;
   status: WatchStatus;
   mode: "live" | "mock";
-  provider: "yahoo" | "alpha_vantage" | "saved" | "local";
+  provider: "yahoo" | "alpha_vantage" | "twelve_data" | "saved" | "local";
   sourceLabel: string;
   warning?: string;
   fetchedAt: string;
