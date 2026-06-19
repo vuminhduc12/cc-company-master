@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchTwelveDataQuote, hasTwelveDataKey } from "@/lib/twelve-data";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,44 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "ticker is required" }, { status: 400 });
   }
 
+  // ① Twelve Data（TWELVE_DATA_KEY が設定されている場合は優先）
+  if (hasTwelveDataKey()) {
+    try {
+      const q = await fetchTwelveDataQuote(ticker);
+      const change = q.price - q.previousClose;
+      const changePct = q.previousClose > 0 ? (change / q.previousClose) * 100 : 0;
+      return NextResponse.json({
+        ok: true,
+        ticker,
+        source: "Twelve Data quote",
+        marketState: q.isMarketOpen ? "REGULAR" : "CLOSED",
+        regular: {
+          price: q.price,
+          previousClose: q.previousClose,
+          change,
+          changePercent: changePct,
+          currency: q.currency,
+          asOf: q.asOf
+        },
+        extended: null,
+        summary: {
+          exchange: q.exchange || null,
+          dayRange: { low: q.low, high: q.high },
+          yearRange: null,
+          marketCap: null,
+          averageVolume: q.volume || null,
+          instrumentType: null
+        },
+        intraday: [],
+        intradayCandles: [],
+        fetchedAt: new Date().toISOString()
+      });
+    } catch {
+      // Twelve Data 失敗時は Yahoo Finance にフォールバック
+    }
+  }
+
+  // ② Yahoo Finance（フォールバック・イントラデイチャート付き）
   try {
     const symbol = normalizeYahooSymbol(ticker);
     const response = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1m&includePrePost=true`, {
@@ -127,6 +166,9 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+// ─── unused var guard ─────────────────────────────────────────────────────────
+// （上部の try ブロックで直接 return するため、ここに到達することはない）
 
 function buildExtendedSession(meta: NonNullable<YahooChartResult["meta"]>, result: YahooChartResult, regularPrice: number) {
   const postPrice = finiteOrNull(meta.postMarketPrice);

@@ -223,3 +223,36 @@ drop policy if exists "user_plans_select_own" on public.user_plans;
 create policy "user_plans_select_own"
   on public.user_plans for select
   using (auth.uid() = user_id);
+
+-- ─── user_alerts ──────────────────────────────────────────────────────────────
+-- 価格アラートをユーザーごとに永続化するテーブル。
+-- client側: src/lib/price-alerts.ts の syncAlertsToDb / loadAlertsFromDb を参照。
+
+create table if not exists public.user_alerts (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  alerts  jsonb   not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_alerts enable row level security;
+
+drop policy if exists "user_alerts_select_own" on public.user_alerts;
+create policy "user_alerts_select_own"
+  on public.user_alerts for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "user_alerts_insert_own" on public.user_alerts;
+create policy "user_alerts_insert_own"
+  on public.user_alerts for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "user_alerts_update_own" on public.user_alerts;
+create policy "user_alerts_update_own"
+  on public.user_alerts for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "user_alerts_delete_own" on public.user_alerts;
+create policy "user_alerts_delete_own"
+  on public.user_alerts for delete
+  using (auth.uid() = user_id);
