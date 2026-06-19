@@ -55,7 +55,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const jobResult = useAiJobResult();
   const [today, setToday] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [dataAge, setDataAge] = useState("");
+  const [aiDataAge, setAiDataAge] = useState("");
+  const [aiDataSourceLabel, setAiDataSourceLabel] = useState("");
   const aiStatus = resolveAiStatus(jobResult?.status);
   useNewsPreferencesSync();
 
@@ -73,26 +74,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  // データ鮮度を相対表示（例: "3分前", "2時間前", "3日前"）
+  // AI分析ジョブの鮮度を相対表示（例: "3分前", "2時間前", "3日前"）
   useEffect(() => {
     function computeAge() {
-      const freshness = jobResult?.dataFreshness;
-      if (!freshness) { setDataAge(""); return; }
-      const parsed = Date.parse(freshness);
-      if (!Number.isFinite(parsed)) { setDataAge(freshness.slice(0, 10)); return; }
+      const freshness = jobResult?.lastRun ?? jobResult?.dataFreshness;
+      if (!freshness) {
+        setAiDataAge("");
+        setAiDataSourceLabel("");
+        return;
+      }
+      setAiDataSourceLabel(freshness);
+      const parsed = parseJobTimestamp(freshness);
+      if (!Number.isFinite(parsed)) {
+        setAiDataAge(freshness.slice(0, 10));
+        return;
+      }
       const diffMs = Date.now() - parsed;
       const diffMin = Math.floor(diffMs / 60_000);
       const diffHr = Math.floor(diffMin / 60);
       const diffDay = Math.floor(diffHr / 24);
-      if (diffMin < 2) setDataAge("たった今");
-      else if (diffMin < 60) setDataAge(`${diffMin}分前`);
-      else if (diffHr < 24) setDataAge(`${diffHr}時間前`);
-      else setDataAge(`${diffDay}日前`);
+      if (diffMin < 2) setAiDataAge("たった今");
+      else if (diffMin < 60) setAiDataAge(`${diffMin}分前`);
+      else if (diffHr < 24) setAiDataAge(`${diffHr}時間前`);
+      else setAiDataAge(`${diffDay}日前`);
     }
     computeAge();
     const timer = window.setInterval(computeAge, 60_000);
     return () => window.clearInterval(timer);
-  }, [jobResult?.dataFreshness]);
+  }, [jobResult?.dataFreshness, jobResult?.lastRun]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-slate-50">
@@ -111,18 +120,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="mt-1 hidden items-center gap-2 text-xs text-slate-500 sm:flex">
                   <span>{today || "---- -- --"}</span>
                   <span className={`rounded-full border px-2 py-0.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
-                  {dataAge && (
+                  {aiDataAge && (
                     <span
                       className={`rounded-full border px-2 py-0.5 font-semibold ${
-                        dataAge.includes("日前") && parseInt(dataAge) >= 2
-                          ? "border-red-400/30 bg-red-400/10 text-red-300"
-                          : dataAge.includes("時間前") || (dataAge.includes("日前") && parseInt(dataAge) === 1)
-                            ? "border-yellow-300/30 bg-yellow-300/10 text-yellow-200"
-                            : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                        resolveAgeTone(aiDataAge)
                       }`}
-                      title={`データ鮮度: ${jobResult?.dataFreshness ?? ""}`}
+                      title={`AI分析ジョブ: ${aiDataSourceLabel}`}
                     >
-                      データ {dataAge}
+                      AI分析 {aiDataAge}
                     </span>
                   )}
                 </div>
@@ -153,15 +158,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">Free プラン</span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">{today || "---- -- --"}</span>
               <span className={`rounded-full border px-3 py-1.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
-              {dataAge && (
+              {aiDataAge && (
                 <span
-                  className={`rounded-full border px-3 py-1.5 font-semibold ${
-                    dataAge.includes("日前") && parseInt(dataAge) >= 2
-                      ? "border-red-400/30 bg-red-400/10 text-red-300"
-                      : "border-yellow-300/30 bg-yellow-300/10 text-yellow-200"
-                  }`}
+                  className={`rounded-full border px-3 py-1.5 font-semibold ${resolveAgeTone(aiDataAge)}`}
+                  title={`AI分析ジョブ: ${aiDataSourceLabel}`}
                 >
-                  データ {dataAge}
+                  AI分析 {aiDataAge}
                 </span>
               )}
             </div>
@@ -266,4 +268,34 @@ function resolveAiStatus(status: string | undefined) {
     label: "AI Pending",
     className: "border-yellow-300/30 bg-yellow-300/10 text-yellow-200"
   };
+}
+
+function resolveAgeTone(age: string) {
+  const dayMatch = age.match(/^(\d+)日前$/);
+  if (dayMatch && Number(dayMatch[1]) >= 2) {
+    return "border-red-400/30 bg-red-400/10 text-red-300";
+  }
+  if (age.includes("時間前") || dayMatch) {
+    return "border-yellow-300/30 bg-yellow-300/10 text-yellow-200";
+  }
+  return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
+}
+
+function parseJobTimestamp(value: string) {
+  const normalized = value.trim();
+  const jstDateTime = normalized.match(
+    /^(\d{4})[/-](\d{2})[/-](\d{2})(?:\D+(\d{2}):(\d{2})(?::(\d{2}))?)?/
+  );
+  if (jstDateTime) {
+    const [, year, month, day, hour = "00", minute = "00", second = "00"] = jstDateTime;
+    return Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour) - 9,
+      Number(minute),
+      Number(second)
+    );
+  }
+  return Date.parse(normalized);
 }
