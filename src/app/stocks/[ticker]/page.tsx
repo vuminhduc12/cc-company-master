@@ -7,6 +7,7 @@ import { DataTable } from "@/components/DataTable";
 import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForStock, marketForWatchItem } from "@/components/MarketControls";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
+import { PriceAlertPanel } from "@/components/PriceAlertPanel";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
 import { StockChart } from "@/components/StockChart";
@@ -361,6 +362,16 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       <section id="simulation" className="scroll-mt-24">
         <SectionHeading title="現物シミュレーション" note="現在付近で入った場合の利確・損切り・税金・為替影響" />
         <SpotEntrySimulator stock={stock} price={latest} news={tickerNews} score={scoreAnalysis.score} />
+      </section>
+
+      <section className="scroll-mt-24">
+        <SectionHeading title="価格アラート" note="条件達成時にブラウザ通知でお知らせします" />
+        <PriceAlertPanel
+          ticker={stock.ticker}
+          currentPrice={displayClose}
+          currentRsi={latest?.rsi}
+          currentVolumeRatio={latest?.volumeRatio}
+        />
       </section>
 
       <section className="md:hidden">

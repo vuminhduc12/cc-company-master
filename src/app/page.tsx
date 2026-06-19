@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
+import { QuickAddModal } from "@/components/QuickAddModal";
 import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { DataTable } from "@/components/DataTable";
 import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
@@ -22,6 +23,7 @@ import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
+import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import type { AiStockExecutionAudit, DailyPrice, NewsItem, Stock, WatchStatus, WatchlistItem } from "@/types";
 
 type RealtimeQuote = {
@@ -83,7 +85,9 @@ export default function DashboardPage() {
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [historyError, setHistoryError] = useState("");
   const [dashboardListId, setDashboardListId] = useState("all");
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const jobResult = useAiJobResult();
+  const auth = useSupabaseAuth();
   const listManager = useWatchlistLists();
   const executionAudit = resolveAiJobAudit(jobResult);
   const userWatchlist = useUserWatchlist();
@@ -488,7 +492,15 @@ export default function DashboardPage() {
 
       <section className="grid min-w-0 gap-5 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
-          <SectionTitle title="Watchlist" note="銘柄をクリックすると中央の分析が切り替わります" />
+          <div className="flex items-center justify-between gap-2">
+            <SectionTitle title="Watchlist" note="銘柄をクリックすると中央の分析が切り替わります" />
+            <button
+              className="shrink-0 rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-black text-cyan-100 hover:bg-cyan-300/20"
+              onClick={() => setQuickAddOpen(true)}
+            >
+              ＋ 追加
+            </button>
+          </div>
           <div className="space-y-2">
             {marketFilteredWatchlist.map((item) => {
               const quote = quoteForWatchItem(item, { selectedTicker, realtimeQuote });
@@ -602,6 +614,19 @@ export default function DashboardPage() {
           {liveTasks.map((task) => <AiEmployeeCard key={task.name} task={task} />)}
         </div>
       </section>
+
+      <QuickAddModal
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        userId={auth.user?.id}
+        onAdded={(newItem) => {
+          userWatchlist.setCustomItems((prev) => {
+            const exists = prev.some((item) => item.stock.ticker === newItem.stock.ticker);
+            return exists ? prev : [...prev, newItem];
+          });
+          setSelectedTicker(newItem.stock.ticker);
+        }}
+      />
     </div>
   );
 }
