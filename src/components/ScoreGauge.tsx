@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 type ScoreGaugeProps = {
   score: number;
   maxScore?: number;
@@ -22,6 +24,9 @@ function scoreToLabel(score: number, max: number): string {
 }
 
 export function ScoreGauge({ score, maxScore = 100, size = 120, label }: ScoreGaugeProps) {
+  // useId() でアニメーション中もフィルターIDを安定させる（Math.randomは毎render変わるためNG）
+  const uid = useId();
+  const filterId = `gauge-glow-${uid.replace(/:/g, "")}`;
   const { stroke, glow, textColor } = scoreToColor(score, maxScore);
   const displayLabel = label ?? scoreToLabel(score, maxScore);
 
@@ -56,8 +61,6 @@ export function ScoreGauge({ score, maxScore = 100, size = 120, label }: ScoreGa
 
   const trackPath = arcPath(startAngle, sweepAngle, r);
   const fillPath = arcPath(startAngle, fillSweep, r);
-  const filterId = `gauge-glow-${score}`;
-
   return (
     <div className="flex flex-col items-center gap-1">
       <svg

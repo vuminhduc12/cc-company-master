@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type QuoteState = {
   price: number | null;
@@ -124,12 +124,30 @@ function IndexCard({
 
 export function MarketHeroStrip() {
   const quotes = useAllIndices();
-  const now = new Date();
-  const hour = now.getHours();
-  // JST市場時間の判定（UTC+9）
-  const jstHour = (hour + 9) % 24;
-  const tokyoOpen = jstHour >= 9 && jstHour < 15;
-  const nyOpen = hour >= 14 && hour < 21; // UTC 14-21 = NY 9am-4pm EST
+  // new Date() をレンダー中に呼ぶと SSR とクライアントで値が異なり hydration エラーになる
+  // → useEffect で client-only に計算する
+  const [sessionInfo, setSessionInfo] = useState<{
+    tokyoOpen: boolean;
+    nyOpen: boolean;
+    timeStr: string;
+  } | null>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      const hour = now.getUTCHours();
+      const jstHour = (hour + 9) % 24;
+      setSessionInfo({
+        tokyoOpen: jstHour >= 9 && jstHour < 15,
+        nyOpen: hour >= 14 && hour < 21,
+        timeStr: now.toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" }),
+      });
+    }
+    tick();
+    tickRef.current = setInterval(tick, 60_000);
+    return () => { if (tickRef.current) clearInterval(tickRef.current); };
+  }, []);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,0.98))] px-4 py-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
@@ -140,25 +158,25 @@ export function MarketHeroStrip() {
           </span>
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-              tokyoOpen
+              sessionInfo?.tokyoOpen
                 ? "border border-emerald-300/30 bg-emerald-300/10 text-emerald-200"
                 : "border border-slate-700 bg-slate-800 text-slate-500"
             }`}
           >
-            {tokyoOpen ? "🟢 TSE Open" : "⚫ TSE Closed"}
+            {sessionInfo?.tokyoOpen ? "🟢 TSE Open" : "⚫ TSE Closed"}
           </span>
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-              nyOpen
+              sessionInfo?.nyOpen
                 ? "border border-blue-300/30 bg-blue-300/10 text-blue-200"
                 : "border border-slate-700 bg-slate-800 text-slate-500"
             }`}
           >
-            {nyOpen ? "🟢 NYSE Open" : "⚫ NYSE Closed"}
+            {sessionInfo?.nyOpen ? "🟢 NYSE Open" : "⚫ NYSE Closed"}
           </span>
         </div>
         <p className="text-[10px] text-slate-600">
-          {now.toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" })} JST
+          {sessionInfo?.timeStr ?? ""} JST
         </p>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
