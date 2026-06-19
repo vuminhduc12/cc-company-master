@@ -393,8 +393,8 @@ export default function DashboardPage() {
               </div>
               <div className="divide-y divide-white/10">
                 <FactRow label="前日の終値" value={formatMoney(regularPreviousClose, quoteCurrency)} />
-                <FactRow label="日次変動幅" value={formatRange(realtimeQuote?.summary.dayRange.low, realtimeQuote?.summary.dayRange.high, quoteCurrency, `${formatMoney(latest.low, quoteCurrency)} - ${formatMoney(latest.high, quoteCurrency)}`)} />
-                <FactRow label="年間変動幅" value={formatRange(realtimeQuote?.summary.yearRange.low, realtimeQuote?.summary.yearRange.high, quoteCurrency)} />
+                <FactRow label="日次変動幅" value={formatRange(realtimeQuote?.summary.dayRange?.low, realtimeQuote?.summary.dayRange?.high, quoteCurrency, `${formatMoney(latest.low, quoteCurrency)} - ${formatMoney(latest.high, quoteCurrency)}`)} />
+                <FactRow label="年間変動幅" value={formatRange(realtimeQuote?.summary.yearRange?.low, realtimeQuote?.summary.yearRange?.high, quoteCurrency)} />
                 <FactRow label="時価総額" value={formatLargeNumber(realtimeQuote?.summary.marketCap, quoteCurrency)} />
                 <FactRow label="平均取引高" value={formatLargeNumber(realtimeQuote?.summary.averageVolume, "")} />
                 <FactRow label="RSI" value={latest.rsi.toFixed(2)} />
