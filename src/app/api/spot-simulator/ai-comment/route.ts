@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
-import { buildSpotSimulatorPrompt, getOpenAiModel } from "@/lib/ai-prompts";
+import { buildSpotSimulatorPrompt, getOpenAiModel, type AiDiagnosisMode } from "@/lib/ai-prompts";
 import { mergePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
 import { getPricesForTicker } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
@@ -200,9 +200,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, mode: "ai", diagnosisMode, model: cached.model, analysis: cached.analysis, realtime: enrichment, ruleRisk, simulation, cached: true, warning: "短時間の同一AI診断をキャッシュから再利用しました。" });
     }
 
+    const temperature = temperatureForModel(model, diagnosisMode);
     const requestBody = {
         model,
-        temperature: diagnosisMode === "detailed" ? 0.35 : 0.2,
+        ...(temperature === undefined ? {} : { temperature }),
         response_format: { type: "json_object" },
         messages: [
           {
@@ -801,6 +802,16 @@ function buildDataQuality(realtime: Awaited<ReturnType<typeof buildRealtimeConte
     hasRealtimeQuoteFallback: realtime.quote.source.includes("fallback"),
     hasFxFallback: !realtime.fx.ok
   };
+}
+
+function temperatureForModel(model: string, diagnosisMode: AiDiagnosisMode) {
+  if (usesDefaultTemperatureOnly(model)) return undefined;
+  return diagnosisMode === "detailed" ? 0.35 : 0.2;
+}
+
+function usesDefaultTemperatureOnly(model: string) {
+  const normalized = model.toLowerCase();
+  return normalized.startsWith("gpt-5") || /^o\d/.test(normalized);
 }
 
 function formatSignedPercent(value: number) {
