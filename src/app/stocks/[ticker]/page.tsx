@@ -733,26 +733,6 @@ function ScoreCell({ value }: { value: number }) {
   return <Pill className="border-slate-400/30 bg-slate-400/10 text-slate-300">{value}</Pill>;
 }
 
-// ─── スコアバッジ（ヘッダー用）───────────────────────────────────────────
-function ScoreBadge({ score, pattern }: { score: number; pattern: string }) {
-  const stars = "★".repeat(score) + "☆".repeat(Math.max(0, 6 - score));
-  const label = pattern || (score >= 5 ? "上昇候補" : score <= 2 ? "リスク監視" : "中立");
-  const cls =
-    score >= 5
-      ? "border-emerald-400/50 bg-emerald-400/15 text-emerald-200 shadow-emerald-950/30"
-      : score >= 4
-        ? "border-sky-300/40 bg-sky-300/10 text-sky-200 shadow-sky-950/30"
-        : score >= 3
-          ? "border-yellow-300/35 bg-yellow-300/10 text-yellow-200 shadow-yellow-950/30"
-          : "border-red-400/35 bg-red-400/10 text-red-200 shadow-red-950/30";
-  return (
-    <div className={`inline-flex flex-col items-center rounded-xl border px-3 py-1.5 shadow-lg ${cls}`}>
-      <span className="text-[11px] tracking-wider">{stars}</span>
-      <span className="text-[11px] font-black uppercase tracking-wide">{score}/6 — {label}</span>
-    </div>
-  );
-}
-
 // ─── メトリクスピル（ヘッダー用）────────────────────────────────────────
 function MetricPill({ label, value, tone }: { label: string; value: string; tone: "green" | "red" | "neutral" }) {
   const cls =

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkServerAlertsForTicker, loadServerAlertTickers } from "@/lib/server-price-alerts";
 import { createServerSupabase } from "@/lib/supabase";
 import { fetchWatchlistLookup } from "@/lib/watchlist-lookup";
 import { watchlist } from "@/lib/mock-data";
@@ -8,8 +9,9 @@ export const maxDuration = 60;
 
 /**
  * Lightweight price-only refresh cron.
- * Runs every 30 min during US market hours (Mon-Fri 13:30-21:00 UTC).
- * No AI analysis — just fetches latest price and upserts to daily_prices.
+ * Vercel Hobby can only invoke cron once per day, so frequent refreshes should
+ * be kicked by an external scheduler such as GitHub Actions.
+ * No AI analysis — just fetches latest price, upserts daily_prices, and checks alerts.
  */
 export async function GET(request: NextRequest) {
   const authError = authorize(request);
@@ -23,6 +25,7 @@ export async function GET(request: NextRequest) {
 
   let refreshed = 0;
   let failed = 0;
+  let triggeredAlerts = 0;
   const errors: string[] = [];
 
   for (const { ticker, market } of tickers) {
@@ -80,6 +83,14 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      const alertResult = await checkServerAlertsForTicker(result.stock.ticker, {
+        price: result.price.close,
+        rsi: result.price.rsi,
+        volumeRatio: result.price.volumeRatio,
+      });
+      triggeredAlerts += alertResult.triggered;
+      if (alertResult.error) errors.push(`${ticker} alerts: ${alertResult.error}`);
+
       refreshed++;
     } catch (error) {
       failed++;
@@ -91,6 +102,7 @@ export async function GET(request: NextRequest) {
     ok: true,
     refreshed,
     failed,
+    triggeredAlerts,
     total: tickers.length,
     runAt: new Date().toISOString(),
     errors: errors.length > 0 ? errors : undefined,
@@ -104,10 +116,15 @@ async function resolveTargetTickers(
 ): Promise<TickerTarget[]> {
   if (supabase) {
     const { data } = await supabase.from("stocks").select("ticker").order("ticker");
-    if (data && data.length > 0) {
-      return (data as { ticker: string }[]).map((row) => ({
-        ticker: row.ticker,
-        market: row.ticker.endsWith(".T") ? "jp" : "us",
+    const alertTickers = await loadServerAlertTickers();
+    const tickerSet = new Set<string>([
+      ...((data ?? []) as { ticker: string }[]).map((row) => row.ticker),
+      ...alertTickers,
+    ]);
+    if (tickerSet.size > 0) {
+      return Array.from(tickerSet).map((ticker) => ({
+        ticker,
+        market: ticker.endsWith(".T") ? "jp" : "us",
       }));
     }
   }

@@ -90,9 +90,18 @@ Cronまたは手動実行が成功すると、最新結果は `job_runs.result` 
     {
       "path": "/api/cron/daily-job",
       "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/cron/price-refresh",
+      "schedule": "0 13 * * 1-5"
     }
   ]
 }
 ```
 
 本番ではVercelのEnvironment Variablesに `CRON_SECRET` を設定してください。Cron APIは `Authorization: Bearer CRON_SECRET` または `x-cron-secret` を確認します。
+
+Vercel HobbyのCron Jobsは1日1回までです。価格更新を30分間隔で動かしたい場合は、`.github/workflows/price-refresh.yml` のGitHub Actionsから `/api/cron/price-refresh` を呼び出します。GitHub repository secretsに以下を設定してください。
+
+- `PRICE_REFRESH_URL`: `https://<your-domain>/api/cron/price-refresh`
+- `CRON_SECRET`: Vercel側と同じ値

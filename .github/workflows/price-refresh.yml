@@ -1,0 +1,24 @@
+name: Price Refresh
+
+on:
+  schedule:
+    - cron: "*/30 13-21 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call price refresh endpoint
+        env:
+          PRICE_REFRESH_URL: ${{ secrets.PRICE_REFRESH_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$PRICE_REFRESH_URL" ]; then
+            echo "PRICE_REFRESH_URL secret is required."
+            exit 1
+          fi
+
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "$PRICE_REFRESH_URL"

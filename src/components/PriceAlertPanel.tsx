@@ -6,6 +6,7 @@ import {
   checkAlerts,
   conditionLabel,
   deleteAlert,
+  loadAlertsFromDb,
   loadAlerts,
   markAlertTriggered,
   metricLabel,
@@ -13,10 +14,12 @@ import {
   resetAlert,
   saveAlerts,
   sendBrowserNotification,
+  syncAlertsToDb,
   type AlertCondition,
   type AlertMetric,
   type PriceAlert,
 } from "@/lib/price-alerts";
+import { createBrowserSupabase } from "@/lib/supabase";
 
 type Props = {
   ticker: string;
@@ -31,11 +34,13 @@ export function PriceAlertPanel({ ticker, currentPrice, currentRsi, currentVolum
   const [condition, setCondition] = useState<AlertCondition>("above");
   const [value, setValue] = useState("");
   const [notifStatus, setNotifStatus] = useState<"unknown" | "granted" | "denied">("unknown");
+  const [userId, setUserId] = useState<string | null>(null);
   const checkedRef = useRef<Set<string>>(new Set());
 
   // 初期ロード
   useEffect(() => {
-    setAlerts(loadAlerts().filter((a) => a.ticker === ticker));
+    const localAlerts = loadAlerts();
+    setAlerts(localAlerts.filter((a) => a.ticker === ticker));
     if ("Notification" in window) {
       setNotifStatus(
         Notification.permission === "granted" ? "granted"
@@ -43,6 +48,29 @@ export function PriceAlertPanel({ ticker, currentPrice, currentRsi, currentVolum
         : "unknown"
       );
     }
+    let cancelled = false;
+    async function loadSyncedAlerts() {
+      const supabase = createBrowserSupabase();
+      if (!supabase) return;
+      const { data } = await supabase.auth.getUser();
+      const activeUserId = data.user?.id;
+      if (!activeUserId || cancelled) return;
+      setUserId(activeUserId);
+      const dbAlerts = await loadAlertsFromDb(activeUserId);
+      if (cancelled) return;
+      if (dbAlerts && dbAlerts.length > 0) {
+        saveAlerts(dbAlerts);
+        setAlerts(dbAlerts.filter((a) => a.ticker === ticker));
+        return;
+      }
+      if (localAlerts.length > 0) {
+        await syncAlertsToDb(activeUserId, localAlerts);
+      }
+    }
+    void loadSyncedAlerts();
+    return () => {
+      cancelled = true;
+    };
   }, [ticker]);
 
   // アラートチェック（価格更新のたびに実行）
@@ -63,9 +91,10 @@ export function PriceAlertPanel({ ticker, currentPrice, currentRsi, currentVolum
         : currentVolumeRatio;
       if (current !== undefined) sendBrowserNotification(alert, current);
       const updated = markAlertTriggered(alert.id);
+      if (userId) void syncAlertsToDb(userId, updated);
       setAlerts(updated.filter((a) => a.ticker === ticker));
     }
-  }, [ticker, currentPrice, currentRsi, currentVolumeRatio]);
+  }, [ticker, currentPrice, currentRsi, currentVolumeRatio, userId]);
 
   const refresh = useCallback(() => {
     setAlerts(loadAlerts().filter((a) => a.ticker === ticker));
@@ -78,6 +107,7 @@ export function PriceAlertPanel({ ticker, currentPrice, currentRsi, currentVolum
     const condStr = condition === "above" ? "以上" : "以下";
     const label = `${ticker} ${metricLabel(metric)} ${numVal} ${condStr}`;
     addAlert({ ticker, metric, condition, value: numVal, label });
+    if (userId) void syncAlertsToDb(userId, loadAlerts());
     setValue("");
     refresh();
   }
@@ -201,11 +231,13 @@ export function PriceAlertPanel({ ticker, currentPrice, currentRsi, currentVolum
               alert={alert}
               onDelete={() => {
                 deleteAlert(alert.id);
+                if (userId) void syncAlertsToDb(userId, loadAlerts());
                 refresh();
               }}
               onReset={() => {
                 resetAlert(alert.id);
                 checkedRef.current.delete(alert.id);
+                if (userId) void syncAlertsToDb(userId, loadAlerts());
                 refresh();
               }}
             />

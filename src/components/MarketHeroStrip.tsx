@@ -9,8 +9,6 @@ type QuoteState = {
   loading: boolean;
 };
 
-type IndexQuote = QuoteState & { symbol: string; label: string };
-
 const INDICES = [
   { symbol: "^N225", label: "日経 225", flag: "🇯🇵" },
   { symbol: "^GSPC", label: "S&P 500", flag: "🇺🇸" },

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
-import { getPricesForTicker, news as mockNews, prices, report as mockReport, watchlist } from "@/lib/mock-data";
+import { getPricesForTicker, news as mockNews, prices, report as mockReport } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
+import { loadServerWatchlistItems } from "@/lib/server-watchlist";
 import { fetchStockData } from "@/lib/stock-data";
 import { loadSavedNewsForTicker, saveJobResult } from "@/lib/supabase";
 import { getUserPlan } from "@/lib/user-plan";
@@ -45,6 +46,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     const lastRun = nowJst();
     const nextRun = nextRunJst();
     const manualStocks = source === "manual" ? await parseManualStocks(request) : [];
+    const serverWatchlist = manualStocks.length ? null : await loadServerWatchlistItems();
     const targets = manualStocks.length
       ? manualStocks.map((stock) => ({
         stock,
@@ -55,8 +57,14 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
         status: "Watch" as const,
         memo: "Manual AI Jobで指定された追加銘柄"
       }))
-      : watchlist;
-    if (targets.length > userPlan.watchlistItems) {
+      : serverWatchlist?.items ?? [];
+    if (targets.length === 0) {
+      return NextResponse.json(
+        buildErrorResult("No watchlist targets found.", "Supabase watchlist_itemsに自動分析対象の銘柄がありません。Watchlist画面で銘柄を追加してください。"),
+        { status: 412 }
+      );
+    }
+    if (source === "manual" && targets.length > userPlan.watchlistItems) {
       return NextResponse.json(
         buildErrorResult(`${userPlan.name} plan allows up to ${userPlan.watchlistItems} watchlist stocks.`),
         { status: 403 }
@@ -93,6 +101,9 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
       report: buildPortfolioReport(successfulResults, aiMarketScore, nextRun),
       warning: buildWarning(hasAiKeys, stockResults, executionAudit)
     };
+    if (serverWatchlist?.warning) {
+      result.warning = result.warning ? `${result.warning} ${serverWatchlist.warning}` : serverWatchlist.warning;
+    }
     const saveResult = await saveJobResult(result);
     if (!saveResult.saved && saveResult.reason) {
       result.warning = result.warning ? `${result.warning} ${saveResult.reason}` : saveResult.reason;
