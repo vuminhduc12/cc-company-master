@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-type IndexQuote = {
-  symbol: string;
-  label: string;
+type QuoteState = {
   price: number | null;
   change: number | null;
   changePercent: number | null;
   loading: boolean;
 };
+
+type IndexQuote = QuoteState & { symbol: string; label: string };
 
 const INDICES = [
   { symbol: "^N225", label: "日経 225", flag: "🇯🇵" },
@@ -18,59 +18,67 @@ const INDICES = [
   { symbol: "^VIX", label: "VIX", flag: "📊" },
 ];
 
-function useIndexQuote(symbol: string) {
-  const [state, setState] = useState<Omit<IndexQuote, "symbol" | "label">>({
-    price: null,
-    change: null,
-    changePercent: null,
-    loading: true,
-  });
+const EMPTY: QuoteState = { price: null, change: null, changePercent: null, loading: true };
+
+/** 全インデックスを 600ms 間隔で順次フェッチ → Yahoo Finance レート制限を回避 */
+function useAllIndices() {
+  const [quotes, setQuotes] = useState<Record<string, QuoteState>>(
+    () => Object.fromEntries(INDICES.map((i) => [i.symbol, EMPTY]))
+  );
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      try {
-        const response = await fetch(
-          `/api/quote/realtime?ticker=${encodeURIComponent(symbol)}`,
-          { cache: "no-store" }
-        );
-        const data = await response.json();
+
+    async function loadAll() {
+      for (let i = 0; i < INDICES.length; i++) {
         if (cancelled) return;
-        if (data.ok) {
-          setState({
-            price: data.regular.price,
-            change: data.regular.change,
-            changePercent: data.regular.changePercent,
-            loading: false,
-          });
-        } else {
-          setState((prev) => ({ ...prev, loading: false }));
+        // 2件目以降は 600ms ずらして送信
+        if (i > 0) await new Promise<void>((r) => setTimeout(r, 600 * i));
+        if (cancelled) return;
+        const sym = INDICES[i].symbol;
+        try {
+          const res = await fetch(
+            `/api/quote/realtime?ticker=${encodeURIComponent(sym)}`,
+            { cache: "no-store" }
+          );
+          const data = await res.json() as { ok: boolean; regular?: { price: number; change: number; changePercent: number } };
+          if (cancelled) return;
+          setQuotes((prev) => ({
+            ...prev,
+            [sym]: data.ok && data.regular
+              ? { price: data.regular.price, change: data.regular.change, changePercent: data.regular.changePercent, loading: false }
+              : { ...prev[sym], loading: false },
+          }));
+        } catch {
+          if (!cancelled) setQuotes((prev) => ({ ...prev, [sym]: { ...prev[sym], loading: false } }));
         }
-      } catch {
-        if (!cancelled) setState((prev) => ({ ...prev, loading: false }));
       }
     }
-    void load();
-    const timer = window.setInterval(() => void load(), 5 * 60 * 1000);
+
+    void loadAll();
+    // 5分ごとに全件再フェッチ
+    const timer = window.setInterval(() => void loadAll(), 5 * 60 * 1000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [symbol]);
+  }, []);
 
-  return state;
+  return quotes;
 }
 
 function IndexCard({
   symbol,
   label,
   flag,
+  quoteState,
 }: {
   symbol: string;
   label: string;
   flag: string;
+  quoteState: QuoteState;
 }) {
-  const { price, change, changePercent, loading } = useIndexQuote(symbol);
+  const { price, change, changePercent, loading } = quoteState;
   const isUp = (changePercent ?? 0) >= 0;
   const upColor = "text-emerald-300";
   const downColor = "text-red-400";
@@ -115,6 +123,7 @@ function IndexCard({
 }
 
 export function MarketHeroStrip() {
+  const quotes = useAllIndices();
   const now = new Date();
   const hour = now.getHours();
   // JST市場時間の判定（UTC+9）
@@ -154,7 +163,7 @@ export function MarketHeroStrip() {
       </div>
       <div className="flex gap-3 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
         {INDICES.map((idx) => (
-          <IndexCard key={idx.symbol} {...idx} />
+          <IndexCard key={idx.symbol} {...idx} quoteState={quotes[idx.symbol] ?? EMPTY} />
         ))}
       </div>
     </div>

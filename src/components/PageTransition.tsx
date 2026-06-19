@@ -1,30 +1,36 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * ページ遷移アニメーション
- * パスが変化するたびに fade-slide-up アニメーションを実行する
+ * key を変えずに DOM ref でアニメーションを再起動するため、
+ * 子コンポーネントのアンマウント→再マウントを起こさない。
  */
 export function PageTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [animKey, setAnimKey] = useState(0);
-  const prevPath = useRef(pathname);
+  const ref = useRef<HTMLDivElement>(null);
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
-    if (prevPath.current !== pathname) {
-      prevPath.current = pathname;
-      setAnimKey((k) => k + 1);
+    // 初回マウント時は CSS の initial animation で再生するので skip
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
     }
+    const el = ref.current;
+    if (!el) return;
+    // アニメーションをリセットしてから再起動
+    el.style.animation = "none";
+    void el.offsetHeight; // reflow trigger
+    el.style.animation = "page-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) both";
   }, [pathname]);
 
   return (
     <div
-      key={animKey}
-      style={{
-        animation: "page-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) both",
-      }}
+      ref={ref}
+      style={{ animation: "page-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) both" }}
     >
       {children}
     </div>
