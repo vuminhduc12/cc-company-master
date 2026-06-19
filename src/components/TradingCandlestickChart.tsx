@@ -131,6 +131,7 @@ export function TradingCandlestickChart({
               <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">Live</span>
             ) : (
               <>
+                <span className="rounded-full border border-violet-300/25 bg-violet-300/10 px-2 py-0.5 text-[10px] font-black text-violet-200">MA5</span>
                 <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-2 py-0.5 text-[10px] font-black text-amber-100">MA20</span>
                 <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-2 py-0.5 text-[10px] font-black text-teal-100">MA50</span>
               </>
@@ -434,6 +435,10 @@ function DailyLineSvg({
       <RangeLine chart={chart} value={chart.rangeHigh} label="Range high" tone="up" />
       <RangeLine chart={chart} value={chart.rangeLow} label="Range low" tone="down" />
       {areaPath ? <path d={areaPath} fill={`url(#daily-line-fill-${ticker})`} /> : null}
+      {/* MA lines (behind price line) */}
+      <path d={linePath(chart.points, chart.y, "ma5")} fill="none" stroke="#a78bfa" strokeWidth="1.4" strokeLinecap="round" opacity="0.80" />
+      <path d={linePath(chart.points, chart.y, "ma20")} fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round" opacity="0.85" />
+      <path d={linePath(chart.points, chart.y, "ma50")} fill="none" stroke="#2dd4bf" strokeWidth="1.8" strokeLinecap="round" opacity="0.85" />
       <path d={path} fill="none" stroke={stroke} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
       {vwapPath ? <path d={vwapPath} fill="none" stroke="#38bdf8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" /> : null}
       {hasVolume ? <VolumeProfile chart={chart} /> : <VolumeUnavailable chart={chart} />}
@@ -686,10 +691,11 @@ function intradayIndexFromX(x: number, chart: ReturnType<typeof buildIntradayCha
   return Math.max(0, Math.min(chart.points.length - 1, index));
 }
 
-function linePath(points: CandlePoint[], y: (value: number) => number, key: "ma20" | "ma50") {
+function linePath(points: CandlePoint[], y: (value: number) => number, key: "ma5" | "ma20" | "ma50") {
   if (points.length < 2) return "";
-  return points
-    .filter((point) => Number.isFinite(point[key]))
+  const valid = points.filter((point) => Number.isFinite(point[key]));
+  if (valid.length < 2) return "";
+  return valid
     .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${y(point[key]).toFixed(2)}`)
     .join(" ");
 }

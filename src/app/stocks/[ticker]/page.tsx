@@ -7,6 +7,7 @@ import { DataTable } from "@/components/DataTable";
 import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForStock, marketForWatchItem } from "@/components/MarketControls";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
+import { ScoreGauge } from "@/components/ScoreGauge";
 import { PriceAlertPanel } from "@/components/PriceAlertPanel";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
@@ -15,6 +16,7 @@ import { mergeRealtimeDailyPrice, resolvePriceSeries, validateDailyPriceSeries }
 import { analyzePatternSimilarity, type PatternHorizon } from "@/lib/pattern-similarity";
 import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
+import { useCountUp } from "@/lib/use-count-up";
 import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
@@ -89,6 +91,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const chartPrices = mergedPrices;
   const tablePrices = mergedPrices.slice().reverse();
   const scoreAnalysis = latest ? analyzeStock(latest, tickerNews) : null;
+  const animDetailScore = useCountUp(scoreAnalysis?.score ?? 0, 900);
   const decisionLevels = useMemo(() => mergedPrices.length ? buildDecisionLevels(mergedPrices) : null, [mergedPrices]);
   const patternSimilarity = useMemo(() => mergedPrices.length ? analyzePatternSimilarity(mergedPrices) : null, [mergedPrices]);
   const newsCounts = {
@@ -183,9 +186,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-300">Stock Detail</p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
+            <div className="mt-2 flex flex-wrap items-center gap-4">
               <h2 className="text-3xl font-black tracking-tight text-slate-50 sm:text-4xl">{stock.ticker}</h2>
-              <ScoreBadge score={scoreAnalysis.score} pattern={latest.pattern} />
+              <ScoreGauge score={animDetailScore} maxScore={100} size={80} />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
               <MarketBadge market={marketForStock(stock)} />

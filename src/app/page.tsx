@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
+import { MarketHeroStrip } from "@/components/MarketHeroStrip";
 import { QuickAddModal } from "@/components/QuickAddModal";
+import { ScoreGauge } from "@/components/ScoreGauge";
+import { Sparkline } from "@/components/Sparkline";
 import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { DataTable } from "@/components/DataTable";
 import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
@@ -20,6 +23,7 @@ import { latestPrice, mergeRealtimeDailyPrice, resolvePriceSeries, validateDaily
 import { aiTasks, news, prices, pricesByTicker, report, watchlist } from "@/lib/mock-data";
 import { analyzeStock, statusFromScore } from "@/lib/scoring";
 import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
+import { useCountUp } from "@/lib/use-count-up";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
@@ -127,6 +131,11 @@ export default function DashboardPage() {
   const bullish = liveStatuses.filter((itemStatus) => itemStatus === "Strong Buy" || itemStatus === "Buy").length;
   const caution = liveStatuses.filter((itemStatus) => itemStatus === "Caution").length;
   const danger = liveStatuses.filter((itemStatus) => itemStatus === "Sell").length;
+  // ⑨ カウントアップ
+  const animScore = useCountUp(score, 900);
+  const animBullish = useCountUp(bullish, 700);
+  const animCaution = useCountUp(caution, 700);
+  const animDanger = useCountUp(danger, 700);
   const liveTasks = jobResult?.tasks ?? aiTasks;
   const liveReport = jobResult?.report ?? report;
   const displayedPrice = realtimeQuote?.regular.price ?? latest.close;
@@ -262,6 +271,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 sm:space-y-7">
+      {/* ① マーケットサマリーヒーロー */}
+      <MarketHeroStrip />
+
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(23,23,23,0.96),rgba(5,5,5,0.98)_55%,rgba(19,78,74,0.60))] text-slate-50 shadow-2xl shadow-black/35 ring-1 ring-white/5">
         <div className="border-b border-white/10 bg-black/24 px-3 py-3 backdrop-blur sm:px-5">
           <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -282,6 +294,11 @@ export default function DashboardPage() {
           <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
             {marketFilteredWatchlist.map((item) => {
               const quote = quoteForWatchItem(item, { selectedTicker, realtimeQuote });
+              const tickerHistory = userWatchlist.getTickerHistory(item.stock.ticker);
+              const sparkPrices = (tickerHistory?.prices ?? pricesByTicker[item.stock.ticker] ?? [])
+                .slice(-30)
+                .map((p) => p.close)
+                .filter(Number.isFinite);
               return (
                 <MarketChip
                   key={item.stock.ticker}
@@ -291,6 +308,7 @@ export default function DashboardPage() {
                   currency={currencyForTicker(item.stock.ticker)}
                   market={marketForWatchItem(item)}
                   active={item.stock.ticker === selectedItem.stock.ticker}
+                  sparkPrices={sparkPrices.length >= 5 ? sparkPrices : undefined}
                   onClick={() => setSelectedTicker(item.stock.ticker)}
                 />
               );
@@ -339,12 +357,9 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div className="flex w-full flex-col gap-3 md:w-auto md:shrink-0 md:items-end">
-                  <div className="w-full rounded-2xl border border-teal-300/20 bg-teal-300/[0.08] px-5 py-4 text-sm shadow-2xl shadow-teal-950/20 md:w-[180px]">
-                    <p className="text-xs font-semibold text-teal-100/70">AI スコア</p>
-                    <p className="mt-1 text-5xl font-black tracking-tight text-white tabular-nums">{score}</p>
-                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full rounded-full bg-teal-300" style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
-                    </div>
+                  {/* ⑦ 円形スコアゲージ (⑨ カウントアップ適用) */}
+                  <div className="flex w-full items-center justify-center rounded-2xl border border-teal-300/20 bg-teal-300/[0.06] py-3 shadow-2xl shadow-teal-950/20 md:w-[160px]">
+                    <ScoreGauge score={animScore} maxScore={100} size={120} />
                   </div>
                   <div className="flex gap-2">
                     <Link className="rounded-lg border border-white/10 bg-white/[0.08] px-4 py-2 text-sm font-bold text-slate-100 shadow-sm hover:bg-white/[0.12]" href={`/stocks/${selectedItem.stock.ticker}`}>
@@ -403,11 +418,15 @@ export default function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-5">
         <StatCard label="Total Watchlist" value={dashboardWatchlist.length} />
-        <StatCard label="Bullish Stocks" value={bullish} tone="green" />
-        <StatCard label="Caution Stocks" value={caution} tone="yellow" />
-        <StatCard label="Danger Stocks" value={danger} tone="red" />
-        <StatCard label="AI Market Score" value={score} tone="blue" />
+        <StatCard label="Bullish Stocks" value={animBullish} tone="green" />
+        <StatCard label="Caution Stocks" value={animCaution} tone="yellow" />
+        <StatCard label="Danger Stocks" value={animDanger} tone="red" />
+        <StatCard label="AI Market Score" value={animScore} tone="blue" />
       </section>
+
+      {/* ③ スクリーナービュー（スコアヒートマップ） */}
+      <ScreenerGrid watchlist={dashboardWatchlist} jobResult={jobResult} userWatchlist={userWatchlist} onSelect={setSelectedTicker} />
+
 
       <section className="grid gap-4 md:grid-cols-4">
         <StatCard label="Last AI Run" value={jobResult?.lastRun ?? "未実行"} tone="gold" />
@@ -700,6 +719,82 @@ function MobileAuditMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ─── ③ スクリーナーグリッド ────────────────────────────────────────────────
+function ScreenerGrid({
+  watchlist,
+  jobResult,
+  userWatchlist,
+  onSelect
+}: {
+  watchlist: ReturnType<typeof resolveVisibleWatchlist>;
+  jobResult: ReturnType<typeof useAiJobResult>;
+  userWatchlist: ReturnType<typeof useUserWatchlist>;
+  onSelect: (ticker: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const items = watchlist.map((item) => {
+    const liveScore = jobResult?.stocks?.find((s) => s.stock.ticker === item.stock.ticker);
+    const history = userWatchlist.getTickerHistory(item.stock.ticker);
+    const latestP = history?.prices?.at(-1) ?? null;
+    const score = liveScore?.aiMarketScore ?? latestP?.score ?? 50;
+    const changePercent = latestP?.changePercent ?? 0;
+    return { item, score, changePercent };
+  }).sort((a, b) => b.score - a.score);
+
+  function scoreBg(score: number) {
+    if (score >= 72) return "bg-emerald-500/20 border-emerald-400/30";
+    if (score >= 55) return "bg-sky-500/15 border-sky-400/25";
+    if (score >= 40) return "bg-amber-400/12 border-amber-400/20";
+    return "bg-red-500/15 border-red-400/25";
+  }
+  function scoreText(score: number) {
+    if (score >= 72) return "text-emerald-300";
+    if (score >= 55) return "text-sky-300";
+    if (score >= 40) return "text-amber-300";
+    return "text-red-400";
+  }
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-slate-950/40 shadow-xl shadow-black/20">
+      <button
+        className="flex w-full items-center justify-between gap-3 px-5 py-4"
+        onClick={() => setOpen((v) => !v)}
+        type="button"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Score Screener</span>
+          <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[11px] font-bold text-slate-300">{items.length}銘柄</span>
+        </div>
+        <span className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-white/10 p-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {items.map(({ item, score, changePercent }) => (
+              <button
+                key={item.stock.ticker}
+                className={`rounded-xl border p-3 text-left transition hover:scale-[1.03] hover:shadow-lg ${scoreBg(score)}`}
+                onClick={() => { onSelect(item.stock.ticker); setOpen(false); }}
+                type="button"
+              >
+                <p className="text-sm font-black text-slate-50">{item.stock.ticker}</p>
+                <p className="mt-0.5 truncate text-[10px] text-slate-500">{item.stock.companyName}</p>
+                <p className={`mt-2 text-xl font-black tabular-nums ${scoreText(score)}`}>{score}</p>
+                <p className={`text-[11px] font-bold tabular-nums ${changePercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {changePercent >= 0 ? "+" : ""}{changePercent.toFixed(1)}%
+                </p>
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-[11px] text-slate-600">スコア高い順 / タップで銘柄を選択</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function MarketChip({
   ticker,
   price,
@@ -707,6 +802,7 @@ function MarketChip({
   currency,
   market,
   active,
+  sparkPrices,
   onClick
 }: {
   ticker: string;
@@ -715,25 +811,39 @@ function MarketChip({
   currency: string;
   market: "us" | "jp";
   active: boolean;
+  sparkPrices?: number[];
   onClick: () => void;
 }) {
   return (
     <button
-      className={active
+      className={`sparkline-row ${active
         ? "flex min-w-[164px] items-center gap-3 rounded-xl border border-teal-300/45 bg-teal-300/[0.14] px-3 py-2 text-left shadow-lg shadow-teal-950/20 ring-1 ring-teal-200/10"
-        : "flex min-w-[164px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-left shadow-sm transition hover:border-teal-300/25 hover:bg-white/[0.08]"}
+        : "flex min-w-[164px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-left shadow-sm transition hover:border-teal-300/25 hover:bg-white/[0.08]"}`}
       onClick={onClick}
     >
-      <span className={change >= 0 ? "grid size-9 place-items-center rounded-lg border border-emerald-300/20 bg-emerald-300/10 text-lg font-bold text-emerald-200" : "grid size-9 place-items-center rounded-lg border border-red-300/20 bg-red-300/10 text-lg font-bold text-red-200"}>
-        {change >= 0 ? "↑" : "↓"}
-      </span>
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="block text-sm font-black text-white">{ticker}</span>
           <MarketBadge market={market} compact />
         </span>
-        <span className="block truncate text-xs text-slate-400">{price ? formatMoney(price, currency) : "-"} / <span className={change >= 0 ? "text-emerald-300" : "text-red-300"}>{price ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}</span></span>
+        <span className="block truncate text-xs text-slate-400">
+          {price ? formatMoney(price, currency) : "-"}
+          {" "}/{" "}
+          <span className={change >= 0 ? "text-emerald-300" : "text-red-300"}>
+            {price ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "-"}
+          </span>
+        </span>
       </span>
+      {/* ② スパークライン */}
+      {sparkPrices && sparkPrices.length >= 2 ? (
+        <Sparkline prices={sparkPrices} width={56} height={28} className="sparkline-svg shrink-0" />
+      ) : (
+        <span className={change >= 0
+          ? "grid size-8 shrink-0 place-items-center rounded-lg border border-emerald-300/20 bg-emerald-300/10 text-sm font-bold text-emerald-200"
+          : "grid size-8 shrink-0 place-items-center rounded-lg border border-red-300/20 bg-red-300/10 text-sm font-bold text-red-200"}>
+          {change >= 0 ? "↑" : "↓"}
+        </span>
+      )}
     </button>
   );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NewsNotificationCenter } from "@/components/NewsNotificationCenter";
+import { PageTransition } from "@/components/PageTransition";
 import { QuickAiJobButton } from "@/components/QuickAiJobButton";
 import { useNewsPreferencesSync } from "@/lib/news-preferences";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
@@ -207,7 +208,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       {/* モバイルコンテンツ：ボトムナビ分の余白 */}
-      <main className="mx-auto max-w-[1600px] px-4 py-6 pb-24 sm:px-6 lg:py-8 lg:pb-8">{children}</main>
+      <main className="mx-auto max-w-[1600px] px-4 py-6 pb-24 sm:px-6 lg:py-8 lg:pb-8">
+        <PageTransition>{children}</PageTransition>
+      </main>
 
       {/* ─── モバイル ボトムナビゲーション ─────────────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-black/90 backdrop-blur-xl lg:hidden safe-bottom">
