@@ -16,7 +16,6 @@ import { NewsCard } from "@/components/NewsCard";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { StockChart } from "@/components/StockChart";
 import { resolveAiJobAudit } from "@/lib/ai-job-audit";
 import { stockDataProviderPriorityLabel } from "@/lib/data-provider-policy";
 import { latestPrice, mergeRealtimeDailyPrice, resolvePriceSeries, validateDailyPriceSeries, volumeRatio } from "@/lib/indicators";
@@ -90,6 +89,7 @@ export default function DashboardPage() {
   const [historyError, setHistoryError] = useState("");
   const [dashboardListId, setDashboardListId] = useState("all");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [showOperationalDetails, setShowOperationalDetails] = useState(false);
   const jobResult = useAiJobResult();
   const auth = useSupabaseAuth();
   const listManager = useWatchlistLists();
@@ -178,9 +178,11 @@ export default function DashboardPage() {
   ];
   const dataQualityWarnings = [
     quoteError ? `Realtime: ${quoteError}` : "",
+    jobResult?.error ? `AI Job Error: ${jobResult.error}` : "",
     jobResult?.warning ? `AI Job: ${jobResult.warning}` : "",
     resolvedPrices.rejectedLive ? `API価格が検証済み履歴と大きく異なるため、${selectedItem.stock.ticker}はローカル履歴を優先表示しています。` : "",
     activeHistoryData?.warning ? `History: ${activeHistoryData.warning}` : "",
+    historyStatus === "error" && !pricesByTicker[selectedItem.stock.ticker] && !selectedLive?.prices?.length ? `History: ${selectedItem.stock.ticker}の日足履歴を取得できなかったため、Watchlist保存価格で暫定表示しています。${historyError}` : "",
     priceValidation.issues[0]?.message ?? ""
   ];
 
@@ -440,76 +442,62 @@ export default function DashboardPage() {
         <span className="text-emerald-100/75">。Alpha Vantageは明示的に有効化した時だけ最後の補助として使用します。</span>
       </section>
 
-      {jobResult?.error ? (
-        <section className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
-          AI Job Error: {jobResult.error}
-        </section>
-      ) : null}
-      {jobResult?.warning ? (
-        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
-          AI Job Warning: {jobResult.warning}
-        </section>
-      ) : null}
-      {resolvedPrices.rejectedLive ? (
-        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
-          Data Warning: APIから取得した{selectedItem.stock.ticker}価格がローカル検証済み履歴と大きく異なるため、画面ではローカル履歴を優先表示しています。
-        </section>
-      ) : null}
-      {priceValidation.issues.length ? (
-        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
-          Data Quality Warning: {selectedItem.stock.ticker}の日足データを検証し、確認が必要な品質項目を{priceValidation.issues.length}件検出しました。
-          <span className="mt-1 block text-xs text-yellow-200/80">{priceValidation.issues[0].message}</span>
-        </section>
-      ) : null}
-      {activeHistoryData?.warning ? (
-        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
-          History Warning: {activeHistoryData.warning}
-        </section>
-      ) : null}
-      {historyStatus === "error" && !pricesByTicker[selectedItem.stock.ticker] && !selectedLive?.prices?.length ? (
-        <section className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4 text-sm leading-6 text-yellow-100">
-          History Notice: {selectedItem.stock.ticker}の日足履歴を取得できなかったため、Watchlist保存価格で暫定表示しています。{historyError}
-        </section>
-      ) : null}
-
       <DataQualityPanel items={dataQualityItems} warnings={dataQualityWarnings} />
 
-      <section>
-        <SectionTitle title="AI Execution Visibility" note="AI実行履歴、データ鮮度、429時のルール分析切替を銘柄ごとに確認" />
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <AuditTile label="完了銘柄" value={executionAudit ? `${executionAudit.completedStocks}/${executionAudit.totalStocks}` : "-"} tone={executionAudit?.failedStocks ? "yellow" : "green"} />
-          <AuditTile label="AI分析ニュース" value={executionAudit?.aiNewsCount ?? "-"} tone="blue" />
-          <AuditTile label="ルール代替ニュース" value={executionAudit?.ruleNewsCount ?? "-"} tone={executionAudit?.ruleNewsCount ? "yellow" : "green"} />
-          <AuditTile label="最新ニュース日" value={executionAudit?.latestNewsDate ?? "-"} />
-        </div>
-        {executionAudit ? (
-          <>
-            <div className="space-y-3 md:hidden">
-              {executionAudit.stocks.map((item) => <AuditMobileCard key={item.ticker} item={item} />)}
-            </div>
-            <div className="hidden md:block">
-              <DataTable
-                headers={["Ticker", "状態", "株価ソース", "株価鮮度", "News", "AI/Rule", "フォールバック理由"]}
-                rows={executionAudit.stocks.map((item) => [
-                  <span key="ticker" className="font-black text-sky-200">{item.ticker}</span>,
-                  <AuditPill key="status" label={item.status === "Error" ? "Error" : "Completed"} tone={item.status === "Error" ? "red" : "green"} />,
-                  item.priceSource,
-                  item.priceFreshness,
-                  `${item.newsCount}件${item.latestNewsDate ? ` / 最新 ${item.latestNewsDate}` : ""}`,
-                  <span key="mode" className="font-bold text-slate-100">AI {item.aiNewsCount} / Rule {item.ruleNewsCount}</span>,
-                  item.fallbackReason || item.warning || "-"
-                ])}
-              />
-            </div>
-          </>
-        ) : (
-          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-sm leading-6 text-slate-400">
-            Manual AI Jobがまだ実行されていません。実行後に銘柄ごとの取得・分析履歴が表示されます。
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/45 shadow-xl shadow-black/20 ring-1 ring-white/5">
+        <button
+          className="flex w-full flex-col gap-3 px-4 py-4 text-left sm:flex-row sm:items-center sm:justify-between sm:px-5"
+          onClick={() => setShowOperationalDetails((value) => !value)}
+          type="button"
+        >
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Operational Audit</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-50">AI Execution Visibility</h2>
+            <p className="mt-1 text-xs text-slate-500">AI実行履歴、データ鮮度、429時のルール分析切替</p>
           </div>
-        )}
+          <div className="flex flex-wrap items-center gap-2">
+            <AuditPill label={executionAudit?.failedStocks ? "Check" : executionAudit ? "Ready" : "Pending"} tone={executionAudit?.failedStocks ? "yellow" : executionAudit ? "green" : "yellow"} />
+            <span className={`text-slate-400 transition-transform ${showOperationalDetails ? "rotate-180" : ""}`}>▾</span>
+          </div>
+        </button>
+        {showOperationalDetails ? (
+          <div className="border-t border-white/10 p-4 sm:p-5">
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AuditTile label="完了銘柄" value={executionAudit ? `${executionAudit.completedStocks}/${executionAudit.totalStocks}` : "-"} tone={executionAudit?.failedStocks ? "yellow" : "green"} />
+              <AuditTile label="AI分析ニュース" value={executionAudit?.aiNewsCount ?? "-"} tone="blue" />
+              <AuditTile label="ルール代替ニュース" value={executionAudit?.ruleNewsCount ?? "-"} tone={executionAudit?.ruleNewsCount ? "yellow" : "green"} />
+              <AuditTile label="最新ニュース日" value={executionAudit?.latestNewsDate ?? "-"} />
+            </div>
+            {executionAudit ? (
+              <>
+                <div className="space-y-3 md:hidden">
+                  {executionAudit.stocks.map((item) => <AuditMobileCard key={item.ticker} item={item} />)}
+                </div>
+                <div className="hidden md:block">
+                  <DataTable
+                    headers={["Ticker", "状態", "株価ソース", "株価鮮度", "News", "AI/Rule", "フォールバック理由"]}
+                    rows={executionAudit.stocks.map((item) => [
+                      <span key="ticker" className="font-black text-sky-200">{item.ticker}</span>,
+                      <AuditPill key="status" label={item.status === "Error" ? "Error" : "Completed"} tone={item.status === "Error" ? "red" : "green"} />,
+                      item.priceSource,
+                      item.priceFreshness,
+                      `${item.newsCount}件${item.latestNewsDate ? ` / 最新 ${item.latestNewsDate}` : ""}`,
+                      <span key="mode" className="font-bold text-slate-100">AI {item.aiNewsCount} / Rule {item.ruleNewsCount}</span>,
+                      item.fallbackReason || item.warning || "-"
+                    ])}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-sm leading-6 text-slate-400">
+                Manual AI Jobがまだ実行されていません。実行後に銘柄ごとの取得・分析履歴が表示されます。
+              </div>
+            )}
+          </div>
+        ) : null}
       </section>
 
-      <section className="grid min-w-0 gap-5 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
+      <section className="grid min-w-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <div className="min-w-0 space-y-4">
           <div className="flex items-center justify-between gap-2">
             <SectionTitle title="Watchlist" note="銘柄をクリックすると中央の分析が切り替わります" />
@@ -553,17 +541,6 @@ export default function DashboardPage() {
               );
             })}
           </div>
-        </div>
-
-        <div className="min-w-0 overflow-x-hidden">
-          <StockChart
-            prices={chartPrices}
-            ticker={selectedItem.stock.ticker}
-            intraday={realtimeQuote?.intraday ?? []}
-            intradayCandles={realtimeQuote?.intradayCandles ?? []}
-            previousClose={regularPreviousClose}
-            extendedPrice={hasExtendedPrice ? realtimeQuote?.extended?.price ?? null : null}
-          />
         </div>
 
         <aside className="min-w-0 space-y-4">
