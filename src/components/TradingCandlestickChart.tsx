@@ -67,7 +67,7 @@ export function TradingCandlestickChart({
   intraday?: TradingIntradayPoint[];
   intradayCandles?: TradingIntradayCandle[];
   defaultRange?: string;
-  height?: number;
+  height?: number | string;
   previousClose?: number | null;
   extendedPrice?: number | null;
   subtitle?: string;
@@ -148,8 +148,8 @@ export function TradingCandlestickChart({
             {subtitle ? <p className="pb-1 text-xs font-semibold text-slate-500">{subtitle}</p> : null}
           </div>
         </div>
-        <div className="flex flex-col gap-2 sm:items-end">
-          <div className="flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/50 p-1 [-webkit-overflow-scrolling:touch]">
+        <div className="flex min-w-0 flex-col gap-2 sm:items-end">
+          <div className="flex w-full min-w-0 gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/50 p-1 sm:w-auto [-webkit-overflow-scrolling:touch]">
             {(["auto", "line", "candle"] as const).map((mode) => (
               <button
                 key={mode}
@@ -161,7 +161,7 @@ export function TradingCandlestickChart({
               </button>
             ))}
           </div>
-          <div className="flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/50 p-1 [-webkit-overflow-scrolling:touch]">
+          <div className="flex w-full min-w-0 gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/50 p-1 sm:w-auto [-webkit-overflow-scrolling:touch]">
             {availableRanges.map((range) => (
               <button
                 key={range.label}

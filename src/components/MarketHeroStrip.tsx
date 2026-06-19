@@ -148,9 +148,9 @@ export function MarketHeroStrip() {
   }, []);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,0.98))] px-4 py-4 shadow-xl shadow-black/20 ring-1 ring-white/5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+    <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,0.98))] px-3 py-3 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:px-4 sm:py-4">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
             Market Overview
           </span>
@@ -177,7 +177,7 @@ export function MarketHeroStrip() {
           {sessionInfo?.timeStr ?? ""} JST
         </p>
       </div>
-      <div className="flex gap-3 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+      <div className="flex gap-2 overflow-x-auto pb-1 sm:gap-3 [-webkit-overflow-scrolling:touch]">
         {INDICES.map((idx) => (
           <IndexCard key={idx.symbol} {...idx} quoteState={quotes[idx.symbol] ?? EMPTY} />
         ))}

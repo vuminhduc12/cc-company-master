@@ -43,7 +43,7 @@ export function FinanceDashboardChart({
       intraday={intraday}
       intradayCandles={intradayCandles}
       defaultRange={intradayCandles.length >= 2 ? "1m" : "1M"}
-      height={390}
+      height="clamp(330px, 58vh, 390px)"
       previousClose={previousClose}
       extendedPrice={extendedPrice}
       subtitle={intradayCandles.length >= 2 ? "1m OHLC / VWAP" : intraday.length >= 2 ? "Live feed / Daily candles" : "Daily candles"}
