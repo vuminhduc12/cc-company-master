@@ -12,6 +12,7 @@ type QuoteState = {
 const INDICES = [
   { symbol: "^N225", label: "日経 225", flag: "🇯🇵" },
   { symbol: "^GSPC", label: "S&P 500", flag: "🇺🇸" },
+  { symbol: "^IXIC", label: "NASDAQ", flag: "🇺🇸" },
   { symbol: "^DJI", label: "Dow Jones", flag: "🇺🇸" },
   { symbol: "^VIX", label: "VIX", flag: "📊" },
 ];
