@@ -80,7 +80,6 @@ export function TradingCandlestickChart({
   const selectedIntradayMinutes = "intradayMinutes" in selectedRange ? selectedRange.intradayMinutes : null;
   const showIntradayCandles = Boolean(selectedIntradayMinutes && intradayCandles.length >= 2);
   const showIntraday = rangeLabel === "1D" && intraday.length >= 2 && chartMode !== "candle";
-  const showLine = showIntraday || chartMode === "line";
   const visiblePrices = useMemo(() => filterDailyPrices(prices, rangeLabel), [prices, rangeLabel]);
   const visibleIntradayCandles = useMemo(
     () => aggregateIntradayCandles(intradayCandles, selectedIntradayMinutes ?? 1),
@@ -88,6 +87,8 @@ export function TradingCandlestickChart({
   );
   const intradayCandlePrices = useMemo(() => visibleIntradayCandles.map(intradayCandleToDailyPrice), [visibleIntradayCandles]);
   const chartPrices = showIntradayCandles ? intradayCandlePrices : visiblePrices;
+  const denseCandles = chartPrices.length > 180;
+  const showLine = showIntraday || chartMode === "line" || (chartMode === "auto" && denseCandles);
   const latest = visiblePrices[visiblePrices.length - 1];
   const latestChartPrice = chartPrices[chartPrices.length - 1];
   const first = visiblePrices[0];
@@ -330,9 +331,9 @@ function buildChart(prices: DailyPrice[], previousClose?: number | null, extende
   const left = 34;
   const right = 982;
   const top = 22;
-  const priceBottom = 306;
-  const volumeTop = 328;
-  const volumeBottom = 390;
+  const priceBottom = 296;
+  const volumeTop = 318;
+  const volumeBottom = 394;
   const volumeHeight = volumeBottom - volumeTop;
   const fallbackPrice = prices[0]?.close ?? 1;
   const priceValues = prices.length ? prices.flatMap((price) => [price.high, price.low, price.ma20, price.ma50]) : [fallbackPrice];
@@ -705,7 +706,9 @@ function candleBodyWidth(pointCount: number, step: number) {
   if (pointCount <= 5) return 38;
   if (pointCount <= 12) return 26;
   if (pointCount <= 36) return Math.max(10, Math.min(18, step * 0.58));
-  return Math.max(4, Math.min(12, step * 0.62));
+  if (pointCount <= 120) return Math.max(3, Math.min(12, step * 0.62));
+  if (pointCount <= 220) return Math.max(2, Math.min(7, step * 0.56));
+  return Math.max(1.2, Math.min(4, step * 0.48));
 }
 
 function intradayPath(points: ReturnType<typeof buildIntradayChart>["points"]) {

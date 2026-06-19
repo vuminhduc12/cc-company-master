@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { NewsItem } from "@/types";
 import { StatusBadge } from "./StatusBadge";
 
@@ -6,6 +7,8 @@ export function NewsCard({ item, featured = false, onDelete }: { item: NewsItem;
   const tickerStyle = getTickerStyle(item.ticker);
   const sentimentUi = getSentimentUi(item.sentiment);
   const impactUi = getImpactUi(item.impactScore);
+  const newsUrl = normalizeNewsUrl(item.url);
+  const newsPageHref = `/news?highlight=${encodeURIComponent(item.ticker)}`;
   const sentimentStyle = {
     Positive: "ring-green-400/15",
     Neutral: "ring-slate-400/10",
@@ -40,11 +43,15 @@ export function NewsCard({ item, featured = false, onDelete }: { item: NewsItem;
                 <span>{item.publishedAt}</span>
               </div>
               <h3 className={`mt-2 break-words font-semibold leading-6 text-slate-50 [overflow-wrap:anywhere] ${featured ? "text-base sm:text-lg" : "text-sm sm:text-base"}`}>
-                {item.url ? (
-                  <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-sky-200">
+                {newsUrl ? (
+                  <a href={newsUrl} target="_blank" rel="noreferrer" className="hover:text-sky-200">
                     {item.title}
                   </a>
-                ) : item.title}
+                ) : (
+                  <Link href={newsPageHref} className="hover:text-sky-200">
+                    {item.title}
+                  </Link>
+                )}
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -80,8 +87,11 @@ export function NewsCard({ item, featured = false, onDelete }: { item: NewsItem;
             <p className="break-words text-xs leading-5 text-slate-300 [overflow-wrap:anywhere]">
               <span className="font-semibold text-sky-200">AIコメント:</span> {item.aiComment}
             </p>
-            {item.url ? (
-              <a className="inline-flex shrink-0 items-center justify-center rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-300/20" href={item.url} target="_blank" rel="noreferrer">
+            <Link className="inline-flex shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/[0.10]" href={newsPageHref}>
+              Newsで読む
+            </Link>
+            {newsUrl ? (
+              <a className="inline-flex shrink-0 items-center justify-center rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-300/20" href={newsUrl} target="_blank" rel="noreferrer">
                 本文 ↗
               </a>
             ) : null}
@@ -99,6 +109,19 @@ export function NewsCard({ item, featured = false, onDelete }: { item: NewsItem;
       </div>
     </article>
   );
+}
+
+function normalizeNewsUrl(value?: string) {
+  const raw = value?.trim();
+  if (!raw || raw === "#" || raw === "-" || raw === "なし") return null;
+  const withProtocol = raw.startsWith("www.") ? `https://${raw}` : raw;
+  try {
+    const url = new URL(withProtocol);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function getTickerStyle(ticker: string) {

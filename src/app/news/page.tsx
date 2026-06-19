@@ -31,9 +31,16 @@ function NewsPageContent() {
   const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
   const [newsListId, setNewsListId] = useState("all");
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
+  const highlightedTicker = searchParams.get("highlight")?.toUpperCase();
   const allVisibleItems = sortNewsByPublishedAt((jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item))));
   const staleCount = countStaleNews(allVisibleItems);
-  const items = filterFreshNews(allVisibleItems);
+  const freshItems = filterFreshNews(allVisibleItems);
+  const items = highlightedTicker
+    ? sortNewsByPublishedAt(uniqueNewsItems([
+      ...freshItems,
+      ...allVisibleItems.filter((item) => item.ticker === highlightedTicker)
+    ]))
+    : freshItems;
   const listCounts = useMemo(() => countWatchlistLists(listManager.lists, visibleWatchlist), [listManager.lists, visibleWatchlist]);
   const marketWatchlist = useMemo(
     () => filterItemsByWatchlistList(visibleWatchlist, newsListId),
@@ -62,12 +69,11 @@ function NewsPageContent() {
   }
 
   useEffect(() => {
-    const highlightedTicker = searchParams.get("highlight")?.toUpperCase();
     if (!highlightedTicker) return;
     if (tickerTabs.some((tab) => tab.ticker === highlightedTicker)) {
       setSelectedTicker(highlightedTicker);
     }
-  }, [searchParams, tickerTabs]);
+  }, [highlightedTicker, tickerTabs]);
 
   useEffect(() => {
     function handlePreferencesChanged() {
@@ -229,6 +235,16 @@ function newsKey(item: { publishedAt: string; ticker: string; title: string; url
 
 function sortNewsByPublishedAt(items: NewsItem[]) {
   return items.slice().sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+}
+
+function uniqueNewsItems(items: NewsItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = newsIdentity(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function buildTickerTabs(items: typeof news, visibleWatchlist: WatchlistItem[]) {
