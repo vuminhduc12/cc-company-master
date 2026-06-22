@@ -8,17 +8,20 @@ import { PageTransition } from "@/components/PageTransition";
 import { QuickAiJobButton } from "@/components/QuickAiJobButton";
 import { useNewsPreferencesSync } from "@/lib/news-preferences";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { useUserWatchlist } from "@/lib/user-watchlist";
 
-const links = [
-  ["/", "Dashboard"],
-  ["/watchlist", "Watchlist"],
-  ["/stocks/RGTI", "Stock Detail"],
-  ["/news", "News"],
-  ["/ai-employees", "AI Employees"],
-  ["/reports", "Reports"],
-  ["/margin-simulator", "Margin Simulator"],
-  ["/settings", "Settings"]
-];
+function buildNavLinks(detailTicker: string) {
+  return [
+    ["/", "Dashboard"],
+    ["/watchlist", "Watchlist"],
+    [`/stocks/${detailTicker}`, "Stock Detail"],
+    ["/news", "News"],
+    ["/ai-employees", "AI Employees"],
+    ["/reports", "Reports"],
+    ["/margin-simulator", "Margin Simulator"],
+    ["/settings", "Settings"]
+  ];
+}
 
 // モバイルボトムナビ（主要5ページ）
 const bottomNavLinks = [
@@ -53,6 +56,9 @@ const bottomNavLinks = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const jobResult = useAiJobResult();
+  const userWatchlist = useUserWatchlist();
+  const detailTicker = userWatchlist.items[0]?.stock.ticker ?? "RGTI";
+  const links = buildNavLinks(detailTicker);
   const [today, setToday] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [aiDataAge, setAiDataAge] = useState("");

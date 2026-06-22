@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
 import { MarketHeroStrip } from "@/components/MarketHeroStrip";
+import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { QuickAddModal } from "@/components/QuickAddModal";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { Sparkline } from "@/components/Sparkline";
@@ -81,7 +82,7 @@ type HistoryApiResult = {
 };
 
 export default function DashboardPage() {
-  const [selectedTicker, setSelectedTicker] = useState("RGTI");
+  const [selectedTicker, setSelectedTicker] = useState("");
   const [realtimeQuote, setRealtimeQuote] = useState<RealtimeQuote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
@@ -103,6 +104,8 @@ export default function DashboardPage() {
     [dashboardListId, dashboardWatchlist]
   );
   const baseLatest = latestPrice(prices);
+  // AIジョブの「主役」銘柄（旧実装ではRGTI固定だった部分を汎用化）
+  const jobPrimaryTicker = jobResult?.stocks?.[0]?.stock.ticker;
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
   const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
   const selectedLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === selectedItem.stock.ticker);
@@ -110,7 +113,7 @@ export default function DashboardPage() {
   const selectedBasePrices = activeHistoryData?.prices ?? cachedHistory?.prices ?? pricesByTicker[selectedItem.stock.ticker] ?? selectedLive?.prices ?? [latestPriceFromWatchItem(selectedItem)];
   const selectedCustomItem = userWatchlist.items.find((item) => item.stock.ticker === selectedItem.stock.ticker);
   const selectedLivePrice = selectedLive?.price
-    ?? (selectedItem.stock.ticker === "RGTI" ? jobResult?.price : null)
+    ?? (selectedItem.stock.ticker === jobPrimaryTicker ? jobResult?.price : null)
     ?? activeHistoryData?.price
     ?? selectedCustomItem?.latestPrice
     ?? null;
@@ -126,7 +129,7 @@ export default function DashboardPage() {
       : news.filter((item) => item.ticker === selectedItem.stock.ticker);
   const liveNews = selectedNews.length > 0 ? selectedNews : news;
   const scoreAnalysis = analyzeStock(latest, liveNews);
-  const score = selectedLive?.aiMarketScore ?? (selectedItem.stock.ticker === "RGTI" && jobResult ? jobResult.aiMarketScore : scoreAnalysis.score);
+  const score = selectedLive?.aiMarketScore ?? (selectedItem.stock.ticker === jobPrimaryTicker && jobResult ? jobResult.aiMarketScore : scoreAnalysis.score);
   const status = selectedLive?.status ?? statusFromScore(score);
   const liveStatuses = dashboardWatchlist.map((item) => item.status);
   const bullish = liveStatuses.filter((itemStatus) => itemStatus === "Strong Buy" || itemStatus === "Buy").length;
@@ -196,6 +199,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    if (!selectedTicker) return;
     let cancelled = false;
 
     async function loadRealtimeQuote() {
@@ -230,6 +234,7 @@ export default function DashboardPage() {
   }, [selectedTicker]);
 
   useEffect(() => {
+    if (!selectedTicker) return;
     let cancelled = false;
 
     async function loadHistory() {
@@ -274,6 +279,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 sm:space-y-7">
+      <OnboardingChecklist />
+
       {/* ① マーケットサマリーヒーロー */}
       <MarketHeroStrip />
 

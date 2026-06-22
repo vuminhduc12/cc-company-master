@@ -79,7 +79,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
       throw new Error(stockResults.map((item) => `${item.stock.ticker}: ${item.error ?? "No data"}`).join(" / "));
     }
 
-    const primary = successfulResults.find((item) => item.stock.ticker === "RGTI") ?? successfulResults[0];
+    const primary = successfulResults[0];
     const allNews = successfulResults.flatMap((item) => item.news);
     const aiMarketScore = Math.round(successfulResults.reduce((sum, item) => sum + item.aiMarketScore, 0) / successfulResults.length);
     const latest = primary.price;
