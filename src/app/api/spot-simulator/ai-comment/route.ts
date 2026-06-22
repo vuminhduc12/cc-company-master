@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
+import { aiLoginRequired, callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
 import { buildSpotSimulatorPrompt, getOpenAiModel, type AiDiagnosisMode } from "@/lib/ai-prompts";
 import { mergePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
 import { getPricesForTicker } from "@/lib/mock-data";
@@ -128,6 +128,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as RequestBody;
     const aiUserId = await resolveAiUserIdFromRequest(request);
+    if (aiLoginRequired(aiUserId)) {
+      return NextResponse.json({ ok: false, error: "AI診断のご利用にはログインが必要です。", code: "AUTH_REQUIRED" }, { status: 401 });
+    }
     if (!body.stock || !body.input) {
       return NextResponse.json({ ok: false, error: "stock and input are required" }, { status: 400 });
     }

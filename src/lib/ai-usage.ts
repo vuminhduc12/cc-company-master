@@ -66,6 +66,16 @@ export function getAiUserId() {
   return defaultUserId;
 }
 
+export function isAnonymousAiUser(userId: string) {
+  return userId === defaultUserId;
+}
+
+// 本番ではAI機能をログイン必須にする（未ログインの local-user 共有クォータ問題を解消）。
+// ローカル開発（NODE_ENV !== production）はログインなしでも動かせるようにする。
+export function aiLoginRequired(userId: string) {
+  return isAnonymousAiUser(userId) && process.env.NODE_ENV === "production";
+}
+
 export async function resolveAiUserIdFromRequest(request: Request) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return defaultUserId;
@@ -426,6 +436,7 @@ function getLocalFallbackPlan(): PlanDefinition {
     monthlyAiCalls: parsePositiveInt(process.env.AI_MONTHLY_CALL_LIMIT, 10),
     dailyAiCalls: parsePositiveInt(process.env.AI_DAILY_CALL_LIMIT, 10),
     watchlistItems: 5,
+    monthlyPriceJpy: 0,
     description: "ローカル未ログイン用プラン"
   };
 }

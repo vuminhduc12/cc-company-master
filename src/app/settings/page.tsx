@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AuthPanel } from "@/components/AuthPanel";
 import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
+import { PlanUpgradePanel } from "@/components/PlanUpgradePanel";
 import { HeaderPill, PageHeader } from "@/components/PageHeader";
 import { resolveAiJobAudit } from "@/lib/ai-job-audit";
 import { authHeaders } from "@/lib/auth-fetch";
@@ -220,6 +221,9 @@ export default function SettingsPage() {
                   </div>
                   {active ? <span className="rounded-full bg-fuchsia-300 px-2.5 py-1 text-[11px] font-black text-slate-950">ACTIVE</span> : null}
                 </div>
+                <p className="mt-3 text-sm font-black text-slate-100">
+                  {plan.monthlyPriceJpy > 0 ? `¥${plan.monthlyPriceJpy.toLocaleString("ja-JP")} / 月` : "無料"}
+                </p>
                 <div className="mt-4 grid gap-2 text-sm">
                   <PlanLimit label="Watchlist" value={`${plan.watchlistItems}銘柄`} />
                   <PlanLimit label="AI月間" value={`${plan.monthlyAiCalls}回`} />
@@ -230,6 +234,8 @@ export default function SettingsPage() {
           })}
         </div>
       </section>
+
+      <PlanUpgradePanel currentPlan={usageSummary?.plan.key} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <label className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-sm text-slate-300 shadow-xl shadow-black/20 ring-1 ring-white/5">
