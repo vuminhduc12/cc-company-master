@@ -1,8 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { authHeaders } from "@/lib/auth-fetch";
 
 const STORAGE_KEY = "dfinance.disclaimer.v1";
+const CONSENT_VERSION = "v1";
 
 export function DisclaimerModal() {
   const [visible, setVisible] = useState(false);
@@ -22,7 +25,21 @@ export function DisclaimerModal() {
     } catch {
       // ignore
     }
+    // ログイン済みなら同意をDBに記録（証跡）。未ログイン・失敗時もUIは進める。
+    void recordConsent();
     setVisible(false);
+  }
+
+  async function recordConsent() {
+    try {
+      await fetch("/api/consent", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ document: "disclaimer", version: CONSENT_VERSION })
+      });
+    } catch {
+      // 記録失敗はUIを止めない
+    }
   }
 
   if (!visible) return null;
@@ -74,8 +91,18 @@ export function DisclaimerModal() {
           </ul>
         </div>
 
+        <p className="mt-4 text-xs text-slate-500">
+          詳細は
+          <Link className="mx-1 text-cyan-300 underline hover:text-cyan-200" href="/legal/terms" target="_blank">利用規約</Link>
+          ・
+          <Link className="mx-1 text-cyan-300 underline hover:text-cyan-200" href="/legal/privacy" target="_blank">プライバシーポリシー</Link>
+          ・
+          <Link className="mx-1 text-cyan-300 underline hover:text-cyan-200" href="/legal/tokushoho" target="_blank">特定商取引法に基づく表記</Link>
+          をご確認ください。
+        </p>
+
         {/* 同意ボタン */}
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-500">
             「同意して利用する」を押すことで上記の内容を理解・同意したものとみなします。
           </p>

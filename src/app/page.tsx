@@ -24,6 +24,7 @@ import { analyzeStock, statusFromScore } from "@/lib/scoring";
 import { HISTORY_POLL_MS } from "@/lib/stock-history-cache";
 import { useCountUp } from "@/lib/use-count-up";
 import { useUserWatchlist } from "@/lib/user-watchlist";
+import { watchStatusLabel } from "@/lib/status-labels";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import { useSupabaseAuth } from "@/lib/use-supabase-auth";
@@ -844,7 +845,7 @@ function WatchStatusPill({ value }: { value: WatchStatus | "Danger" }) {
 
   return (
     <span className={`inline-flex min-w-[78px] justify-center rounded-full border px-2.5 py-1 text-[11px] font-black ${className}`}>
-      {value}
+      {watchStatusLabel(value)}
     </span>
   );
 }

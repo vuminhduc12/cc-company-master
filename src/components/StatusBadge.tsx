@@ -1,4 +1,5 @@
 import type { Sentiment, TaskStatus, WatchStatus } from "@/types";
+import { watchStatusLabel } from "@/lib/status-labels";
 
 type StatusValue = WatchStatus | Sentiment | TaskStatus | "Bullish" | "Caution" | "Danger";
 
@@ -22,7 +23,7 @@ const colors: Record<string, string> = {
 export function StatusBadge({ value }: { value: StatusValue }) {
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${colors[value]}`}>
-      {value}
+      {watchStatusLabel(value)}
     </span>
   );
 }

@@ -256,3 +256,32 @@ drop policy if exists "user_alerts_delete_own" on public.user_alerts;
 create policy "user_alerts_delete_own"
   on public.user_alerts for delete
   using (auth.uid() = user_id);
+
+-- ─── user_consents ────────────────────────────────────────────────────────────
+-- 免責・利用規約・プライバシーポリシーへの同意を「誰がいつどのバージョンに」記録する。
+-- 紛争時の証跡として、ローカルストレージではなくDBに保存する。
+
+create table if not exists public.user_consents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  document text not null,        -- 'disclaimer' | 'terms' | 'privacy'
+  version text not null,
+  agreed_at timestamptz not null default now(),
+  user_agent text,
+  unique (user_id, document, version)
+);
+
+create index if not exists user_consents_user_idx
+  on public.user_consents (user_id, document, agreed_at desc);
+
+alter table public.user_consents enable row level security;
+
+drop policy if exists "user_consents_select_own" on public.user_consents;
+create policy "user_consents_select_own"
+  on public.user_consents for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "user_consents_insert_own" on public.user_consents;
+create policy "user_consents_insert_own"
+  on public.user_consents for insert
+  with check (auth.uid() = user_id);

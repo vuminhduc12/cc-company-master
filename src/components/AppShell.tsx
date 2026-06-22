@@ -214,6 +214,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <PageTransition>{children}</PageTransition>
       </main>
 
+      <footer className="mx-auto max-w-[1600px] px-4 pb-28 sm:px-6 lg:pb-10">
+        <div className="flex flex-col gap-3 border-t border-white/10 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>本サービスは投資情報の補助ツールであり、投資助言サービスではありません。</p>
+          <nav className="flex flex-wrap gap-4">
+            <Link className="hover:text-slate-300" href="/legal/terms">利用規約</Link>
+            <Link className="hover:text-slate-300" href="/legal/privacy">プライバシーポリシー</Link>
+            <Link className="hover:text-slate-300" href="/legal/tokushoho">特定商取引法に基づく表記</Link>
+          </nav>
+        </div>
+      </footer>
+
       {/* ─── モバイル ボトムナビゲーション ─────────────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-black/90 backdrop-blur-xl lg:hidden safe-bottom">
         <div className="flex h-16 items-stretch">
