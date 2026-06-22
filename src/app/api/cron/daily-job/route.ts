@@ -334,7 +334,7 @@ async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock, a
   });
   const cached = getOpenAiCache<NewsAnalysis>(cacheKey);
   if (cached) {
-    recordAiCacheHit({
+    await recordAiCacheHit({
       feature: "daily_news_analysis",
       userId: aiUserId,
       ticker: stock.ticker,

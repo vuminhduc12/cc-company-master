@@ -190,7 +190,7 @@ export async function POST(request: Request) {
     });
     const cached = getOpenAiCache<CachedAiComment>(cacheKey);
     if (cached) {
-      recordAiCacheHit({
+      await recordAiCacheHit({
         feature: userQuestion ? "spot_question" : "spot_diagnosis",
         userId: aiUserId,
         ticker: body.stock.ticker,

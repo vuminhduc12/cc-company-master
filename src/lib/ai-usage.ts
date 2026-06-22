@@ -76,7 +76,7 @@ export async function resolveAiUserIdFromRequest(request: Request) {
   return data.user.id;
 }
 
-export function recordAiUsage(input: Omit<AiUsageLog, "id" | "userId" | "createdAt" | "estimatedCostUsd"> & {
+export async function recordAiUsage(input: Omit<AiUsageLog, "id" | "userId" | "createdAt" | "estimatedCostUsd"> & {
   userId?: string;
   createdAt?: string;
   estimatedCostUsd?: number;
@@ -99,11 +99,12 @@ export function recordAiUsage(input: Omit<AiUsageLog, "id" | "userId" | "created
   };
   usageLogs.unshift(log);
   if (usageLogs.length > maxLogs) usageLogs.length = maxLogs;
-  void saveAiUsageLogToSupabase(log);
+  // サーバーレス環境ではレスポンス後に実行が凍結されうるため、書き込みを待機してログ欠損を防ぐ。
+  await saveAiUsageLogToSupabase(log);
   return log;
 }
 
-export function recordAiCacheHit(input: {
+export async function recordAiCacheHit(input: {
   feature: AiUsageFeature;
   userId?: string;
   ticker?: string;
@@ -133,7 +134,7 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
   const plan = await getUserPlan(userId);
   const allowed = await canUseAi(input.feature, userId, plan);
   if (!allowed.allowed) {
-    recordAiUsage({
+    await recordAiUsage({
       userId,
       feature: input.feature,
       ticker: input.ticker,
@@ -156,7 +157,7 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
   }
 
   if (!input.apiKey) {
-    recordAiUsage({
+    await recordAiUsage({
       userId,
       feature: input.feature,
       ticker: input.ticker,
@@ -200,7 +201,7 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
     const isRateLimited = response.status === 429;
     const errorCode = String(payload?.error?.code ?? response.status);
     const errorMessage = payload?.error?.message ?? `OpenAI API returned ${response.status}`;
-    recordAiUsage({
+    await recordAiUsage({
       userId,
       feature: input.feature,
       ticker: input.ticker,
@@ -225,7 +226,7 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
     };
   }
 
-  recordAiUsage({
+  await recordAiUsage({
     userId,
     feature: input.feature,
     ticker: input.ticker,
@@ -378,8 +379,24 @@ function numberFrom(value: number | string | null | undefined) {
 
 async function canUseAi(feature: AiUsageFeature, userId = defaultUserId, plan = getLocalFallbackPlan()) {
   const monthStart = startOfMonthIso();
-  const monthlyLogs = await loadAiUsageLogsFromSupabase(userId, monthStart)
-    ?? usageLogs.filter((log) => log.userId === userId && log.createdAt >= monthStart);
+  let monthlyLogs: AiUsageLog[];
+  if (hasServerSupabaseConfig()) {
+    // Supabaseが構成済みの本番では、Supabaseを利用量の真実の源とする。
+    const persisted = await loadAiUsageLogsFromSupabase(userId, monthStart);
+    if (persisted === null) {
+      // 構成済みなのに取得失敗 = メモリにフォールバックすると上限が事実上無効になり
+      // OpenAIコストが青天井になる。既定では fail-closed でAI実行を停止する。
+      if (process.env.AI_FAIL_CLOSED !== "false") {
+        return { allowed: false, reason: "利用量データベースに接続できないため、コスト保護のためAI実行を一時停止しました。時間をおいて再試行してください。" };
+      }
+      monthlyLogs = usageLogs.filter((log) => log.userId === userId && log.createdAt >= monthStart);
+    } else {
+      monthlyLogs = persisted;
+    }
+  } else {
+    // Supabase未構成（ローカル開発など）はメモリ集計で動かす。
+    monthlyLogs = usageLogs.filter((log) => log.userId === userId && log.createdAt >= monthStart);
+  }
   const summary = buildAiUsageSummary(monthlyLogs, userId, monthStart, plan);
   const monthlyLimit = plan.monthlyAiCalls;
   if (summary.billableCalls >= monthlyLimit) {
@@ -396,6 +413,10 @@ async function canUseAi(feature: AiUsageFeature, userId = defaultUserId, plan = 
 
 function getDailyLimit(_feature: AiUsageFeature, plan: PlanDefinition) {
   return parsePositiveInt(process.env.AI_DAILY_CALL_LIMIT, plan.dailyAiCalls);
+}
+
+function hasServerSupabaseConfig() {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
 function getLocalFallbackPlan(): PlanDefinition {
