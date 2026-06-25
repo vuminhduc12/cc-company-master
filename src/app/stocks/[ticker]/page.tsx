@@ -393,9 +393,12 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       </section>
 
       <section className="md:hidden">
-        <div className="mb-3">
-          <h3 className="text-base font-bold text-slate-50">日次データ</h3>
-          <p className="mt-1 text-xs text-slate-500">スマホでは日付・終値・前日比・RSI・出来高倍率・判定だけをカードで表示します。</p>
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-50">日次データ</h3>
+            <p className="mt-1 text-xs text-slate-500">スマホでは日付・終値・前日比・RSI・出来高倍率・判定だけをカードで表示します。</p>
+          </div>
+          <HistoricalCsvButton prices={tablePrices} stock={stock} />
         </div>
         <div className="space-y-3">
           {tablePrices.map((price) => <MobileDailyCard key={price.date} price={price} stock={stock} />)}
@@ -403,6 +406,13 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
       </section>
 
       <div className="hidden md:block">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-50">日次データ</h3>
+            <p className="mt-1 text-xs text-slate-500">表示中の過去データをCSVで出力できます。</p>
+          </div>
+          <HistoricalCsvButton prices={tablePrices} stock={stock} />
+        </div>
         <DataTable
           headers={["日付", "始値", "高値", "安値", "終値", "出来高", "前日比%", "出来高倍率", "RSI", "MACD", "MACD方向", "MA5", "MA20", "MA50", "スコア", "判定"]}
           rows={tablePrices.map((price) => [
@@ -426,6 +436,50 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         />
       </div>
     </div>
+  );
+}
+
+function HistoricalCsvButton({ prices, stock }: { prices: DailyPrice[]; stock: Stock }) {
+  function downloadCsv() {
+    const headers = ["日付", "始値", "高値", "安値", "終値", "出来高", "前日比%", "出来高倍率", "RSI", "MACD", "MACD方向", "MA5", "MA20", "MA50", "スコア", "判定"];
+    const rows = prices.map((price) => [
+      price.date,
+      formatStockPrice(price.open, stock),
+      formatStockPrice(price.high, stock),
+      formatStockPrice(price.low, stock),
+      formatStockPrice(price.close, stock),
+      `${Math.round(price.volume / 1000000)}M`,
+      `${price.changePercent.toFixed(2)}%`,
+      `${price.volumeRatio.toFixed(2)}x`,
+      price.rsi.toFixed(2),
+      price.macd.toFixed(2),
+      price.macdDirection,
+      formatStockPrice(price.ma5, stock),
+      formatStockPrice(price.ma20, stock),
+      formatStockPrice(price.ma50, stock),
+      String(price.score),
+      patternLabel(price)
+    ]);
+    const csv = "\uFEFF" + [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${sanitizeFilename(stock.ticker)}_historical_data_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <button
+      className="w-fit shrink-0 rounded-xl border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-xs font-black text-sky-100 transition hover:bg-sky-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={!prices.length}
+      onClick={downloadCsv}
+      type="button"
+    >
+      CSV出力
+    </button>
   );
 }
 
@@ -626,6 +680,18 @@ function formatStockPrice(value: number, stock: Stock) {
   return `$${value.toFixed(2)}`;
 }
 
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, "\"\"")}"`;
+}
+
+function sanitizeFilename(value: string) {
+  return value.replace(/[^a-z0-9._-]+/gi, "_");
+}
+
+function patternLabel(price: Pick<DailyPrice, "pattern" | "score" | "high20Breakout">) {
+  return price.pattern || price.high20Breakout || (price.score >= 6 ? "類似上昇候補" : "通常");
+}
+
 function isJpyStock(stock: Stock) {
   return isJpyStockTicker(stock.ticker) || stock.exchange === "TSE";
 }
@@ -757,7 +823,7 @@ function latestNewsDate(items: { publishedAt: string }[]) {
 }
 
 function PatternCell({ pattern, score, high20Breakout }: { pattern: string; score: number; high20Breakout: string }) {
-  const label = pattern || high20Breakout || (score >= 6 ? "類似上昇候補" : "通常");
+  const label = patternLabel({ pattern, score, high20Breakout });
   if (score >= 8 || pattern.includes("強気") || high20Breakout) {
     return <Pill className="border-green-400/40 bg-green-400/15 text-green-300">{label}</Pill>;
   }

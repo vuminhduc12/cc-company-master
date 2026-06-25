@@ -500,6 +500,7 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
     : comment.riskLevel === "中"
       ? "border-yellow-300/40 bg-yellow-300/15 text-yellow-100"
       : "border-emerald-300/40 bg-emerald-300/15 text-emerald-100";
+  const keyChecks = comment.checklist.slice(0, 3);
 
   return (
     <div className="mt-4 border-t border-white/10 pt-4">
@@ -529,40 +530,17 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
           {comment.confidence ? <span className="inline-flex justify-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-slate-200">信頼度 {comment.confidence}</span> : null}
         </div>
       </div>
-      {comment.dataFreshness ? (
-        <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
-          <p className="text-xs font-bold text-slate-300">データ取得時点</p>
-          <p className="mt-1 text-xs leading-5 text-slate-400">{comment.dataFreshness}</p>
-        </div>
-      ) : null}
-      {comment.marketView ? (
-        <div className="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-bold text-emerald-100">市場見立て</p>
-            <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">
-              {scenarioLabel(comment.marketView.scenario)}
-            </span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-slate-200">
-              信頼度 {comment.marketView.confidence}
-            </span>
-          </div>
-          <ul className="mt-3 space-y-1 text-xs leading-5 text-slate-300">
-            {comment.marketView.topEvidence.map((item) => <li key={item}>・{item}</li>)}
-          </ul>
-        </div>
-      ) : null}
-      {(comment.historicalPatternView || comment.newsImpactView) ? (
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          {comment.historicalPatternView ? <AiText label="過去データ傾向" value={comment.historicalPatternView} /> : null}
-          {comment.newsImpactView ? <AiText label="ニュース影響" value={comment.newsImpactView} /> : null}
+      {comment.userQuestionAnswer ? (
+        <div className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-300/[0.07] p-4">
+          <p className="text-xs font-bold text-cyan-100">質問への回答</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.userQuestionAnswer}</p>
         </div>
       ) : null}
       {comment.scenarioForecast ? (
         <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.06] p-4">
-          <p className="text-xs font-bold text-sky-100">条件付きシナリオ</p>
+          <p className="text-xs font-bold text-sky-100">重要シナリオ</p>
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             <ScenarioLine label="1〜2週間" value={comment.scenarioForecast.oneToTwoWeeks} />
-            <ScenarioLine label="1〜3か月" value={comment.scenarioForecast.oneToThreeMonths} />
             <ScenarioLine label="上昇条件" value={comment.scenarioForecast.upsideTrigger} />
             <ScenarioLine label="下落無効化" value={comment.scenarioForecast.downsideInvalidation} />
           </div>
@@ -571,28 +549,8 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
       ) : null}
       {comment.riskFilter ? (
         <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
-          <p className="text-xs font-bold text-amber-100">最終リスクフィルター</p>
+          <p className="text-xs font-bold text-amber-100">最重要リスク</p>
           <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.riskFilter}</p>
-        </div>
-      ) : null}
-      {comment.analystView ? (
-        <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
-          <p className="text-xs font-bold text-amber-100">上級者見立て</p>
-          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.analystView}</p>
-        </div>
-      ) : null}
-      {comment.scenarioPrediction ? (
-        <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.06] p-4">
-          <p className="text-xs font-bold text-sky-100">リアルタイムAIシナリオ予測</p>
-          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.scenarioPrediction}</p>
-          <p className="mt-2 text-[11px] leading-5 text-slate-500">予測は現在取得できた価格・ニュース・過去類似パターンに基づく条件付きシナリオで、将来の値動きを保証しません。</p>
-        </div>
-      ) : null}
-      {comment.userQuestionAnswer ? (
-        <div className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-300/[0.07] p-4">
-          <p className="text-xs font-bold text-cyan-100">質問へのAI回答</p>
-          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.userQuestionAnswer}</p>
-          <p className="mt-2 text-[11px] leading-5 text-slate-500">回答は投資助言ではなく、入力条件と取得データに基づくリスク整理です。</p>
         </div>
       ) : null}
       {runtime?.warning ? (
@@ -600,43 +558,14 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
           {runtime.warning}
         </p>
       ) : null}
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {comment.entryPriceComment ? <AiText label="エントリー価格" value={comment.entryPriceComment} /> : null}
-        <AiText label="サイズ" value={comment.positionSizeComment} />
-        <AiText label="出口計画" value={comment.exitPlanComment} />
-        <AiText label="税金" value={comment.taxComment} />
-        {comment.fxComment ? <AiText label="為替" value={comment.fxComment} /> : null}
-        {comment.technicalComment ? <AiText label="テクニカル" value={comment.technicalComment} /> : null}
-        <AiText label="ニュース" value={comment.newsComment} />
-      </div>
-      {comment.stressTest?.length ? <AiList title="ストレステスト" items={comment.stressTest} /> : null}
-      {comment.blindSpots?.length ? <AiList title="見落とし確認" items={comment.blindSpots} /> : null}
-      <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
-        <p className="text-xs font-bold text-slate-300">確認チェックリスト</p>
-        <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
-          {comment.checklist.map((item) => <li key={item}>・{item}</li>)}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-function AiList({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
-      <p className="text-xs font-bold text-slate-300">{title}</p>
-      <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
-        {items.map((item) => <li key={item}>・{item}</li>)}
-      </ul>
-    </div>
-  );
-}
-
-function AiText({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
-      <p className="text-xs font-bold text-slate-300">{label}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-400">{value}</p>
+      {keyChecks.length ? (
+        <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
+          <p className="text-xs font-bold text-slate-300">確認すること</p>
+          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
+            {keyChecks.map((item) => <li key={item}>・{item}</li>)}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -648,12 +577,6 @@ function ScenarioLine({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-xs leading-5 text-slate-300">{value}</p>
     </div>
   );
-}
-
-function scenarioLabel(scenario: "upside" | "range" | "downside") {
-  if (scenario === "upside") return "上昇寄り";
-  if (scenario === "downside") return "下落警戒";
-  return "レンジ/中立";
 }
 
 function toneColor(tone: "default" | "up" | "down" | "warn") {
