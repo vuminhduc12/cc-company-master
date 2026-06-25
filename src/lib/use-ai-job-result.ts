@@ -6,6 +6,7 @@ import { loadLatestJobResult } from "@/lib/supabase";
 import type { AiJobResult, NewsItem } from "@/types";
 
 const storageKey = "d-finance-ai-job-result";
+const aiJobResultChangedEvent = "d-finance-ai-job-result-changed";
 
 export function useAiJobResult() {
   const [jobResult, setJobResult] = useState<AiJobResult | null>(null);
@@ -46,8 +47,27 @@ export function useAiJobResult() {
         if (mounted) setJobResult(null);
       });
 
+    function handleStoredResultChange() {
+      const current = localStorage.getItem(storageKey);
+      if (!current) {
+        if (mounted) setJobResult(null);
+        return;
+      }
+      try {
+        applyResult(JSON.parse(current) as AiJobResult);
+      } catch {
+        localStorage.removeItem(storageKey);
+        if (mounted) setJobResult(null);
+      }
+    }
+
+    window.addEventListener(aiJobResultChangedEvent, handleStoredResultChange);
+    window.addEventListener("storage", handleStoredResultChange);
+
     return () => {
       mounted = false;
+      window.removeEventListener(aiJobResultChangedEvent, handleStoredResultChange);
+      window.removeEventListener("storage", handleStoredResultChange);
     };
   }, []);
 
@@ -116,4 +136,4 @@ function readHiddenNewsKeys() {
   return readNewsPreferenceKeys("hidden");
 }
 
-export { hiddenNewsStorageKey, storageKey };
+export { aiJobResultChangedEvent, hiddenNewsStorageKey, storageKey };

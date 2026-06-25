@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import { authHeaders } from "@/lib/auth-fetch";
+import { aiJobResultChangedEvent, storageKey } from "@/lib/use-ai-job-result";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import type { AiJobResult } from "@/types";
-
-const storageKey = "d-finance-ai-job-result";
 
 type RunStatus = "idle" | "running" | "done" | "error";
 
@@ -45,6 +44,7 @@ export function QuickAiJobButton() {
       const result = await response.json() as AiJobResult;
       if (result.ok) {
         localStorage.setItem(storageKey, JSON.stringify(result));
+        window.dispatchEvent(new CustomEvent(aiJobResultChangedEvent));
         setStatus("done");
         setMessage(`完了 ✓  ${result.lastRun ?? ""}${result.warning ? ` / ${result.warning}` : ""}`);
         // 3秒後に自動で閉じる

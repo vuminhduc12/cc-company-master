@@ -12,10 +12,10 @@ import { aiTasks, news, prices, report } from "@/lib/mock-data";
 import { useNewsPreferencesSyncStatus, type NewsPreferenceSyncStatus } from "@/lib/news-preferences";
 import { planDefinitions, type PlanDefinition } from "@/lib/plans";
 import { scoreStock } from "@/lib/scoring";
+import { aiJobResultChangedEvent, storageKey } from "@/lib/use-ai-job-result";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import type { AiJobResult, Stock, WatchlistItem } from "@/types";
 
-const storageKey = "d-finance-ai-job-result";
 const settingsStorageKey = "dfinance.settings.v1";
 
 type AppSettings = {
@@ -141,6 +141,7 @@ export default function SettingsPage() {
       report
     };
     localStorage.setItem(storageKey, JSON.stringify(runningResult));
+    window.dispatchEvent(new CustomEvent(aiJobResultChangedEvent));
     setLatestJobResult(runningResult);
     try {
       const response = await fetch("/api/cron/daily-job", {
@@ -158,6 +159,7 @@ export default function SettingsPage() {
       setStatus(result.ok ? "completed" : "error");
       if (result.ok) {
         localStorage.setItem(storageKey, JSON.stringify(result));
+        window.dispatchEvent(new CustomEvent(aiJobResultChangedEvent));
         setLatestJobResult(result);
         setMessage(`完了しました。Last Run: ${result.lastRun}${result.warning ? ` / Warning: ${result.warning}` : ""}`);
       } else {
@@ -570,6 +572,7 @@ function restoreStoredJobResult(previousStoredResult: string | null) {
   } else {
     localStorage.removeItem(storageKey);
   }
+  window.dispatchEvent(new CustomEvent(aiJobResultChangedEvent));
 }
 
 function readStoredJobResult() {

@@ -6,8 +6,11 @@ import { useEffect, useState } from "react";
 import { NewsNotificationCenter } from "@/components/NewsNotificationCenter";
 import { PageTransition } from "@/components/PageTransition";
 import { QuickAiJobButton } from "@/components/QuickAiJobButton";
+import { authHeaders } from "@/lib/auth-fetch";
 import { useNewsPreferencesSync } from "@/lib/news-preferences";
+import type { PlanDefinition } from "@/lib/plans";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 
 function buildNavLinks(detailTicker: string) {
@@ -55,6 +58,7 @@ const bottomNavLinks = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const auth = useSupabaseAuth();
   const jobResult = useAiJobResult();
   const userWatchlist = useUserWatchlist();
   const detailTicker = userWatchlist.items[0]?.stock.ticker ?? "RGTI";
@@ -63,6 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [aiDataAge, setAiDataAge] = useState("");
   const [aiDataSourceLabel, setAiDataSourceLabel] = useState("");
+  const [planLabel, setPlanLabel] = useState("Free プラン");
   const aiStatus = resolveAiStatus(jobResult?.status);
   useNewsPreferencesSync();
 
@@ -108,6 +113,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const timer = window.setInterval(computeAge, 60_000);
     return () => window.clearInterval(timer);
   }, [jobResult?.dataFreshness, jobResult?.lastRun]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPlan() {
+      try {
+        const response = await fetch("/api/plan/summary", {
+          cache: "no-store",
+          headers: await authHeaders()
+        });
+        const payload = await response.json() as { ok: true; plan: PlanDefinition } | { ok: false };
+        if (!cancelled && response.ok && payload.ok) {
+          setPlanLabel(`${payload.plan.name} プラン`);
+        }
+      } catch {
+        if (!cancelled) setPlanLabel("Free プラン");
+      }
+    }
+    if (!auth.loading) void loadPlan();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.loading, auth.user?.id, auth.email]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-slate-50">
@@ -155,13 +182,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="hidden items-center gap-2 lg:flex">
               <QuickAiJobButton />
               <NewsNotificationCenter jobResult={jobResult} />
-              <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">Free プラン</span>
+              <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">{planLabel}</span>
             </div>
           </div>
           <div className="mt-3 space-y-2 text-xs lg:hidden">
             <NewsNotificationCenter jobResult={jobResult} layout="mobile" />
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">Free プラン</span>
+              <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">{planLabel}</span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">{today || "---- -- --"}</span>
               <span className={`rounded-full border px-3 py-1.5 font-semibold ${aiStatus.className}`}>{aiStatus.label}</span>
               {aiDataAge && (
