@@ -1,7 +1,22 @@
 import { getPlanDefinition, normalizePlanKey, type PlanKey } from "@/lib/plans";
 import { createServerSupabase } from "@/lib/supabase";
 
-export async function getUserPlan(userId: string) {
+const defaultUnlimitedAdminEmails = ["vuminhd127@gmail.com"];
+
+export function isUnlimitedAdminEmail(email: string | null | undefined) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  const configured = process.env.UNLIMITED_ADMIN_EMAILS
+    ? process.env.UNLIMITED_ADMIN_EMAILS.split(",")
+    : defaultUnlimitedAdminEmails;
+  return configured.map(normalizeEmail).includes(normalized);
+}
+
+export async function getUserPlan(userId: string, email?: string | null) {
+  if (isUnlimitedAdminEmail(email)) {
+    return getPlanDefinition("unlimited");
+  }
+
   if (userId === "local-user") {
     return getPlanDefinition(process.env.LOCAL_USER_PLAN ?? process.env.DEFAULT_USER_PLAN);
   }
@@ -63,4 +78,8 @@ export async function updateUserPlanByCustomerId(customerId: string, update: Use
     .update(row)
     .eq("stripe_customer_id", customerId);
   if (error) throw new Error(`user_plans update by customer failed: ${error.message}`);
+}
+
+function normalizeEmail(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
 }

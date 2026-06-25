@@ -66,6 +66,11 @@ export function getAiUserId() {
   return defaultUserId;
 }
 
+export type ResolvedAiUser = {
+  id: string;
+  email: string | null;
+};
+
 export function isAnonymousAiUser(userId: string) {
   return userId === defaultUserId;
 }
@@ -77,13 +82,17 @@ export function aiLoginRequired(userId: string) {
 }
 
 export async function resolveAiUserIdFromRequest(request: Request) {
+  return (await resolveAiUserFromRequest(request)).id;
+}
+
+export async function resolveAiUserFromRequest(request: Request): Promise<ResolvedAiUser> {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!token) return defaultUserId;
+  if (!token) return { id: defaultUserId, email: null };
   const supabase = createServerSupabase();
-  if (!supabase) return defaultUserId;
+  if (!supabase) return { id: defaultUserId, email: null };
   const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user?.id) return defaultUserId;
-  return data.user.id;
+  if (error || !data.user?.id) return { id: defaultUserId, email: null };
+  return { id: data.user.id, email: data.user.email ?? null };
 }
 
 export async function recordAiUsage(input: Omit<AiUsageLog, "id" | "userId" | "createdAt" | "estimatedCostUsd"> & {
@@ -139,9 +148,10 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
   estimatedInputTokens?: number;
   body: Record<string, unknown>;
   apiKey?: string;
+  userEmail?: string | null;
 }): Promise<OpenAiChatResult<T>> {
   const userId = input.userId ?? defaultUserId;
-  const plan = await getUserPlan(userId);
+  const plan = await getUserPlan(userId, input.userEmail);
   const allowed = await canUseAi(input.feature, userId, plan);
   if (!allowed.allowed) {
     await recordAiUsage({
@@ -256,9 +266,9 @@ export function getAiUsageSummary(userId = defaultUserId): AiUsageSummary {
   return buildAiUsageSummary(monthlyLogs, userId, monthStart, getLocalFallbackPlan());
 }
 
-export async function getPersistedAiUsageSummary(userId = defaultUserId): Promise<AiUsageSummary> {
+export async function getPersistedAiUsageSummary(userId = defaultUserId, email?: string | null): Promise<AiUsageSummary> {
   const monthStart = startOfMonthIso();
-  const plan = await getUserPlan(userId);
+  const plan = await getUserPlan(userId, email);
   const persistedLogs = await loadAiUsageLogsFromSupabase(userId, monthStart);
   if (persistedLogs) return buildAiUsageSummary(persistedLogs, userId, monthStart, plan);
   const memoryLogs = usageLogs.filter((log) => log.userId === userId && log.createdAt >= monthStart);
@@ -408,6 +418,9 @@ async function canUseAi(feature: AiUsageFeature, userId = defaultUserId, plan = 
     monthlyLogs = usageLogs.filter((log) => log.userId === userId && log.createdAt >= monthStart);
   }
   const summary = buildAiUsageSummary(monthlyLogs, userId, monthStart, plan);
+  if (plan.isUnlimited) {
+    return { allowed: true };
+  }
   const monthlyLimit = plan.monthlyAiCalls;
   if (summary.billableCalls >= monthlyLimit) {
     return { allowed: false, reason: `月間AI利用上限 ${monthlyLimit} 回に達しています。` };

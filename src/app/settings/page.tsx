@@ -186,7 +186,7 @@ export default function SettingsPage() {
         actions={(
           <>
             <HeaderPill label={usageSummary?.plan.name ?? "Free"} tone="blue" />
-            <HeaderPill label={`AI残り ${usageSummary?.remainingCalls ?? "-"}回`} tone={(usageSummary?.remainingCalls ?? 1) > 0 ? "green" : "red"} />
+            <HeaderPill label={`AI残り ${formatRemainingAiCalls(usageSummary)}`} tone={usageSummary?.plan.isUnlimited || (usageSummary?.remainingCalls ?? 1) > 0 ? "green" : "red"} />
             <HeaderPill label={status === "running" ? "Job Running" : latestJobResult?.status ?? "Job Pending"} tone={status === "error" ? "red" : status === "running" ? "yellow" : "default"} />
           </>
         )}
@@ -209,7 +209,7 @@ export default function SettingsPage() {
             Current: {usageSummary?.plan.name ?? "Free"}
           </span>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <div className="mt-4 grid gap-3 lg:grid-cols-4">
           {Object.values(planDefinitions).map((plan) => {
             const active = usageSummary?.plan.key === plan.key || (!usageSummary && plan.key === "free");
             return (
@@ -225,9 +225,9 @@ export default function SettingsPage() {
                   {plan.monthlyPriceJpy > 0 ? `¥${plan.monthlyPriceJpy.toLocaleString("ja-JP")} / 月` : "無料"}
                 </p>
                 <div className="mt-4 grid gap-2 text-sm">
-                  <PlanLimit label="Watchlist" value={`${plan.watchlistItems}銘柄`} />
-                  <PlanLimit label="AI月間" value={`${plan.monthlyAiCalls}回`} />
-                  <PlanLimit label="AI日次" value={`${plan.dailyAiCalls}回`} />
+                  <PlanLimit label="Watchlist" value={formatPlanLimit(plan.watchlistItems, "銘柄", plan.isUnlimited)} />
+                  <PlanLimit label="AI月間" value={formatPlanLimit(plan.monthlyAiCalls, "回", plan.isUnlimited)} />
+                  <PlanLimit label="AI日次" value={formatPlanLimit(plan.dailyAiCalls, "回", plan.isUnlimited)} />
                 </div>
               </div>
             );
@@ -382,8 +382,8 @@ export default function SettingsPage() {
         {usageSummary ? (
           <>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <AuditMetric label="AI使用回数" value={`${usageSummary.billableCalls}/${usageSummary.monthlyLimit}`} tone={usageSummary.remainingCalls <= 5 ? "yellow" : "blue"} />
-              <AuditMetric label="残り回数" value={usageSummary.remainingCalls} tone={usageSummary.remainingCalls <= 5 ? "yellow" : "green"} />
+              <AuditMetric label="AI使用回数" value={usageSummary.plan.isUnlimited ? `${usageSummary.billableCalls}/無制限` : `${usageSummary.billableCalls}/${usageSummary.monthlyLimit}`} tone={usageSummary.plan.isUnlimited || usageSummary.remainingCalls > 5 ? "blue" : "yellow"} />
+              <AuditMetric label="残り回数" value={usageSummary.plan.isUnlimited ? "無制限" : usageSummary.remainingCalls} tone={usageSummary.plan.isUnlimited || usageSummary.remainingCalls > 5 ? "green" : "yellow"} />
               <AuditMetric label="429発生" value={usageSummary.rateLimitCount} tone={usageSummary.rateLimitCount ? "yellow" : "green"} />
               <AuditMetric label="推定コスト" value={`$${usageSummary.estimatedCostUsd.toFixed(4)}`} />
               <AuditMetric label="キャッシュ再利用" value={usageSummary.cacheHits} tone="green" />
@@ -487,6 +487,15 @@ function NewsSyncStatusPanel({ status, onRefresh }: { status: NewsPreferenceSync
       ) : null}
     </section>
   );
+}
+
+function formatRemainingAiCalls(summary: AiUsageSummary | null) {
+  if (!summary) return "-";
+  return summary.plan.isUnlimited ? "無制限" : `${summary.remainingCalls}回`;
+}
+
+function formatPlanLimit(value: number, suffix: string, isUnlimited?: boolean) {
+  return isUnlimited ? "無制限" : `${value.toLocaleString("ja-JP")}${suffix}`;
 }
 
 function PlanLimit({ label, value }: { label: string; value: string }) {

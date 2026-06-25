@@ -1,4 +1,4 @@
-export type PlanKey = "free" | "pro" | "premium";
+export type PlanKey = "free" | "pro" | "premium" | "unlimited";
 
 export type PlanDefinition = {
   key: PlanKey;
@@ -8,9 +8,12 @@ export type PlanDefinition = {
   watchlistItems: number;
   monthlyPriceJpy: number;
   description: string;
+  isUnlimited?: boolean;
 };
 
-// プラン上限は Free < Pro < Premium の順に必ず増えるよう設計する。
+const unlimitedLimit = Number.MAX_SAFE_INTEGER;
+
+// プラン上限は Free < Pro < Premium < Unlimited の順に必ず増えるよう設計する。
 export const planDefinitions: Record<PlanKey, PlanDefinition> = {
   free: {
     key: "free",
@@ -38,12 +41,23 @@ export const planDefinitions: Record<PlanKey, PlanDefinition> = {
     watchlistItems: 200,
     monthlyPriceJpy: 2980,
     description: "多数銘柄の監視、詳細診断、将来の通知機能まで想定した上位プラン。"
+  },
+  unlimited: {
+    key: "unlimited",
+    name: "Unlimited",
+    monthlyAiCalls: unlimitedLimit,
+    dailyAiCalls: unlimitedLimit,
+    watchlistItems: unlimitedLimit,
+    monthlyPriceJpy: 0,
+    description: "管理者専用。OpenAI Usage Guardの月間/日次ローカル上限を適用しないプラン。",
+    isUnlimited: true
   }
 };
 
 export const paidPlanKeys: PlanKey[] = ["pro", "premium"];
 
 export function normalizePlanKey(value: string | null | undefined): PlanKey {
+  if (value === "unlimited") return value;
   if (value === "pro" || value === "premium") return value;
   return "free";
 }

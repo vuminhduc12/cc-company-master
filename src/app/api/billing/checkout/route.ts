@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({})) as { plan?: string };
   const plan = normalizePlanKey(body.plan);
-  if (plan === "free") {
+  if (plan === "free" || plan === "unlimited") {
     return NextResponse.json({ ok: false, error: "アップグレード先のプラン(pro/premium)を指定してください。" }, { status: 400 });
   }
 

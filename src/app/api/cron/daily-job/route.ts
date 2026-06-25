@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
+import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserFromRequest } from "@/lib/ai-usage";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
@@ -41,8 +41,9 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   }
 
   try {
-    const aiUserId = await resolveAiUserIdFromRequest(request);
-    const userPlan = await getUserPlan(aiUserId);
+    const aiUser = await resolveAiUserFromRequest(request);
+    const aiUserId = aiUser.id;
+    const userPlan = await getUserPlan(aiUserId, aiUser.email);
     const lastRun = nowJst();
     const nextRun = nextRunJst();
     const manualStocks = source === "manual" ? await parseManualStocks(request) : [];
@@ -72,7 +73,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     }
     const stockResults: StockAnalysisResult[] = [];
     for (const item of targets) {
-      stockResults.push(await buildStockAnalysis(item.stock, hasAiKeys, aiUserId));
+      stockResults.push(await buildStockAnalysis(item.stock, hasAiKeys, aiUserId, aiUser.email));
     }
     const successfulResults = stockResults.filter((item) => !item.error);
     if (successfulResults.length === 0) {
@@ -153,14 +154,14 @@ function authorize(request: NextRequest, source: "cron" | "manual") {
   return NextResponse.json(buildErrorResult("Invalid CRON_SECRET."), { status: 401 });
 }
 
-async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean, aiUserId: string): Promise<StockAnalysisResult> {
+async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean, aiUserId: string, aiUserEmail: string | null): Promise<StockAnalysisResult> {
   try {
     const stockData = await fetchStockData(stock.ticker);
     const priceData = stockData.prices;
     const latest = priceData[priceData.length - 1];
     if (!latest) throw new Error("No price data available.");
     const rawNews = await fetchNews(stock);
-    const analyzedNews = await analyzeNews(rawNews, latest, stock, aiUserId);
+    const analyzedNews = await analyzeNews(rawNews, latest, stock, aiUserId, aiUserEmail);
     const scoreAnalysis = analyzeStock(latest, analyzedNews);
     const aiMarketScore = scoreAnalysis.score;
     const status = statusFromScore(aiMarketScore);
@@ -273,9 +274,9 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
   }));
 }
 
-async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock, aiUserId: string): Promise<NewsItem[]> {
+async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock, aiUserId: string, aiUserEmail: string | null): Promise<NewsItem[]> {
   return Promise.all(items.map(async (item) => {
-    const analysis = await analyzeOneNews(item, price, stock, aiUserId).catch((error) => {
+    const analysis = await analyzeOneNews(item, price, stock, aiUserId, aiUserEmail).catch((error) => {
       const fallback = ruleBasedAnalysis(item, price);
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
@@ -318,7 +319,7 @@ type OpenAiNewsPayload = {
   };
 };
 
-async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock, aiUserId: string) {
+async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock, aiUserId: string, aiUserEmail: string | null) {
   const fallback = ruleBasedAnalysis(item, price);
   const key = process.env.OPENAI_API_KEY;
   if (!key) return fallback;
@@ -374,6 +375,7 @@ URL: ${item.url ?? "なし"}
   const aiResult = await callOpenAiChatWithUsageGuard<OpenAiNewsPayload>({
     feature: "daily_news_analysis",
     userId: aiUserId,
+    userEmail: aiUserEmail,
     ticker: stock.ticker,
     model: "gpt-4o-mini",
     promptVersion: "daily-news-analysis-v1",

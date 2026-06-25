@@ -209,7 +209,7 @@ create policy "user_news_preferences_delete_own"
 
 create table if not exists public.user_plans (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  plan text not null default 'free' check (plan in ('free', 'pro', 'premium')),
+  plan text not null default 'free' check (plan in ('free', 'pro', 'premium', 'unlimited')),
   stripe_customer_id text,
   stripe_subscription_id text,
   subscription_status text,

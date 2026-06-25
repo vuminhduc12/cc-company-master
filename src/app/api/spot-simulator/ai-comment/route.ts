@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { aiLoginRequired, callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserIdFromRequest } from "@/lib/ai-usage";
+import { aiLoginRequired, callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserFromRequest } from "@/lib/ai-usage";
 import { buildSpotSimulatorPrompt, getOpenAiModel, type AiDiagnosisMode } from "@/lib/ai-prompts";
 import { mergePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
 import { getPricesForTicker } from "@/lib/mock-data";
@@ -127,7 +127,8 @@ const spotAiCacheTtlMs = 10 * 60 * 1000;
 export async function POST(request: Request) {
   try {
     const body = await request.json() as RequestBody;
-    const aiUserId = await resolveAiUserIdFromRequest(request);
+    const aiUser = await resolveAiUserFromRequest(request);
+    const aiUserId = aiUser.id;
     if (aiLoginRequired(aiUserId)) {
       return NextResponse.json({ ok: false, error: "AI診断のご利用にはログインが必要です。", code: "AUTH_REQUIRED" }, { status: 401 });
     }
@@ -224,6 +225,7 @@ export async function POST(request: Request) {
     const aiResult = await callOpenAiChatWithUsageGuard<OpenAiSpotPayload>({
       feature: userQuestion ? "spot_question" : "spot_diagnosis",
       userId: aiUserId,
+      userEmail: aiUser.email,
       ticker: body.stock.ticker,
       model,
       promptVersion: diagnosisMode,
