@@ -29,10 +29,12 @@ function NewsPageContent() {
   const listManager = useWatchlistLists();
   const userWatchlist = useUserWatchlist();
   const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
+  const [irNews, setIrNews] = useState<NewsItem[]>([]);
   const [newsListId, setNewsListId] = useState("all");
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
   const highlightedTicker = searchParams.get("highlight")?.toUpperCase();
-  const allVisibleItems = sortNewsByPublishedAt((jobResult?.news ?? news).filter((item) => !hiddenNews.has(newsIdentity(item))));
+  const visibleTickerKey = visibleWatchlist.map((item) => item.stock.ticker).filter(Boolean).join(",");
+  const allVisibleItems = sortNewsByPublishedAt(uniqueNewsItems([...(jobResult?.news ?? news), ...irNews]).filter((item) => !hiddenNews.has(newsIdentity(item))));
   const staleCount = countStaleNews(allVisibleItems);
   const freshItems = filterFreshNews(allVisibleItems);
   const items = highlightedTicker
@@ -83,6 +85,32 @@ function NewsPageContent() {
     window.addEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
     return () => window.removeEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadIrNews() {
+      const tickers = visibleTickerKey.split(",").filter(Boolean);
+      if (!tickers.length) {
+        setIrNews([]);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/news/ir/latest?tickers=${encodeURIComponent(tickers.join(","))}`, {
+          cache: "no-store"
+        });
+        const payload = await response.json() as { ok: true; news: NewsItem[] } | { ok: false };
+        if (!cancelled && response.ok && payload.ok) setIrNews(payload.news);
+      } catch {
+        if (!cancelled) setIrNews([]);
+      }
+    }
+    void loadIrNews();
+    const timer = window.setInterval(loadIrNews, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [visibleTickerKey]);
 
   return (
     <div className="space-y-6">
@@ -166,7 +194,7 @@ function NewsPageContent() {
         <div className="rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-5 text-sm leading-6 text-yellow-100">
           {allVisibleItems.length > 0
             ? `${freshNewsWindowDays}日以内のニュースがないため非表示です。Manual AI Jobで最新ニュースを取得してください。`
-            : "この銘柄のニュースはまだありません。Manual AI Job または Cron が成功すると、Watchlist銘柄ごとのニュースがここに表示されます。"}
+            : "この銘柄のニュースはまだありません。Manual AI Job、Cron、IR/開示監視が成功すると、Watchlist銘柄ごとのニュースがここに表示されます。"}
         </div>
       ) : null}
     </div>

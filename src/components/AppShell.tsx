@@ -12,6 +12,7 @@ import type { PlanDefinition } from "@/lib/plans";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import { useUserWatchlist } from "@/lib/user-watchlist";
+import type { NewsItem } from "@/types";
 
 function buildNavLinks(detailTicker: string) {
   return [
@@ -68,6 +69,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [aiDataAge, setAiDataAge] = useState("");
   const [aiDataSourceLabel, setAiDataSourceLabel] = useState("");
   const [planLabel, setPlanLabel] = useState("Free プラン");
+  const [irNews, setIrNews] = useState<NewsItem[]>([]);
+  const watchlistTickerKey = userWatchlist.items.map((item) => item.stock.ticker).filter(Boolean).join(",");
   const aiStatus = resolveAiStatus(jobResult?.status);
   useNewsPreferencesSync();
 
@@ -136,6 +139,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [auth.loading, auth.user?.id, auth.email]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadIrNews() {
+      const tickers = watchlistTickerKey.split(",").filter(Boolean);
+      if (!tickers.length) {
+        setIrNews([]);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/news/ir/latest?tickers=${encodeURIComponent(tickers.join(","))}`, {
+          cache: "no-store"
+        });
+        const payload = await response.json() as { ok: true; news: NewsItem[] } | { ok: false };
+        if (!cancelled && response.ok && payload.ok) setIrNews(payload.news);
+      } catch {
+        if (!cancelled) setIrNews([]);
+      }
+    }
+    void loadIrNews();
+    const timer = window.setInterval(loadIrNews, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [watchlistTickerKey]);
+
   return (
     <div className="min-h-screen bg-[#050505] text-slate-50">
       <div className="fixed inset-0 -z-10 bg-[linear-gradient(180deg,rgba(20,184,166,0.12),rgba(5,5,5,0)_300px),linear-gradient(120deg,rgba(245,158,11,0.08),transparent_32%),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:100%_100%,100%_100%,44px_44px,44px_44px]" />
@@ -181,12 +210,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <div className="hidden items-center gap-2 lg:flex">
               <QuickAiJobButton />
-              <NewsNotificationCenter jobResult={jobResult} />
+              <NewsNotificationCenter jobResult={jobResult} extraNews={irNews} />
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">{planLabel}</span>
             </div>
           </div>
           <div className="mt-3 space-y-2 text-xs lg:hidden">
-            <NewsNotificationCenter jobResult={jobResult} layout="mobile" />
+            <NewsNotificationCenter jobResult={jobResult} layout="mobile" extraNews={irNews} />
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">{planLabel}</span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">{today || "---- -- --"}</span>

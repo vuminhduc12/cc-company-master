@@ -9,14 +9,16 @@ import type { AiJobResult, NewsItem } from "@/types";
 
 export function NewsNotificationCenter({
   jobResult,
-  layout = "desktop"
+  layout = "desktop",
+  extraNews = []
 }: {
   jobResult: AiJobResult | null;
   layout?: "desktop" | "mobile";
+  extraNews?: NewsItem[];
 }) {
   const [open, setOpen] = useState(false);
   const [seenKeys, setSeenKeys] = useState<Set<string>>(() => readNewsPreferenceKeys("seen"));
-  const latestNews = useMemo(() => normalizeLatestNews(filterFreshNews(jobResult?.news ?? [])), [jobResult?.news]);
+  const latestNews = useMemo(() => normalizeLatestNews(filterFreshNews([...(jobResult?.news ?? []), ...extraNews])), [extraNews, jobResult?.news]);
   const unreadItems = latestNews.filter((item) => !seenKeys.has(newsIdentity(item)));
   const featured = latestNews[0] ?? null;
   const sourceLabel = jobResult
@@ -90,7 +92,7 @@ export function NewsNotificationCenter({
               </span>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-400">
-              AI Job / NewsAPI で取得された{freshNewsWindowDays}日以内のニュースです。
+              AI Job / NewsAPI / IR・開示監視で取得された{freshNewsWindowDays}日以内のニュースです。
             </p>
           </div>
 

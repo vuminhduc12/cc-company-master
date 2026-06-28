@@ -91,6 +91,109 @@ export async function loadSavedNewsForTicker(ticker: string) {
   return data.map((row) => newsFromRow(row as SavedNewsRow, ticker));
 }
 
+export async function loadRecentSavedNewsForTickers(tickers: string[], limit = 40) {
+  const supabase = createServerSupabase();
+  if (!supabase) return [];
+  const normalizedTickers = [...new Set(tickers.map((ticker) => ticker.trim().toUpperCase()).filter(Boolean))];
+  if (!normalizedTickers.length) return [];
+
+  const { data: stocks, error: stockError } = await supabase
+    .from("stocks")
+    .select("id,ticker")
+    .in("ticker", normalizedTickers);
+  if (stockError || !stocks?.length) return [];
+
+  const stockRows = stocks as Array<{ id: string; ticker: string }>;
+  const tickerByStockId = new Map(stockRows.map((stock) => [stock.id, stock.ticker]));
+  const { data, error } = await supabase
+    .from("news")
+    .select("*")
+    .in("stock_id", stockRows.map((stock) => stock.id))
+    .in("source", ["SEC EDGAR", "TDnet"])
+    .order("published_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error || !data?.length) return [];
+
+  return data.map((row) => {
+    const typed = row as SavedNewsRow & { stock_id?: string | null };
+    return newsFromRow(typed, tickerByStockId.get(String(typed.stock_id)) ?? "");
+  }).filter((item) => item.ticker);
+}
+
+export async function saveNewsItems(items: NewsItem[]) {
+  const supabase = createServerSupabase();
+  if (!supabase) return { saved: false, reason: "Supabase env is not configured." };
+  if (!items.length) return { saved: true, count: 0 };
+
+  const grouped = new Map<string, NewsItem[]>();
+  for (const item of items) {
+    const ticker = item.ticker.trim().toUpperCase();
+    if (!ticker) continue;
+    grouped.set(ticker, [...(grouped.get(ticker) ?? []), { ...item, ticker }]);
+  }
+
+  let count = 0;
+  for (const [ticker, tickerItems] of grouped) {
+    const stockId = await getOrCreateStockIdForNews(ticker);
+
+    const rows = uniqueNewsRows(tickerItems.map((newsItem) => ({
+      stock_id: stockId,
+      title: newsItem.title,
+      url: newsItem.url,
+      source: newsItem.source,
+      published_at: newsItem.publishedAt,
+      summary: newsItem.summary,
+      sentiment: newsItem.sentiment,
+      impact_score: newsItem.impactScore,
+      risk: newsItem.risk,
+      opportunity: newsItem.opportunity,
+      ai_comment: newsItem.aiComment
+    })));
+    for (const chunk of chunkRows(rows, 100)) {
+      const { error } = await supabase.from("news").upsert(chunk, { onConflict: "stock_id,published_at,title,source" });
+      if (error) throw new Error(`Supabase news save failed (${ticker}): ${error.message}`);
+      count += chunk.length;
+    }
+  }
+
+  return { saved: true, count };
+}
+
+async function getOrCreateStockIdForNews(ticker: string) {
+  const supabase = createServerSupabase();
+  if (!supabase) throw new Error("Supabase env is not configured.");
+
+  const { data: existing, error: readError } = await supabase
+    .from("stocks")
+    .select("id")
+    .eq("ticker", ticker)
+    .maybeSingle();
+  if (readError) throw new Error(`Supabase stocks read failed (${ticker}): ${readError.message}`);
+  if (existing?.id) return existing.id as string;
+
+  const { data: created, error: createError } = await supabase
+    .from("stocks")
+    .insert({
+      ticker,
+      company_name: ticker,
+      sector: "IR / Disclosure",
+      exchange: ticker.endsWith(".T") ? "TSE" : "NASDAQ/NYSE"
+    })
+    .select("id")
+    .single();
+  if (createError) {
+    const { data: retry, error: retryError } = await supabase
+      .from("stocks")
+      .select("id")
+      .eq("ticker", ticker)
+      .maybeSingle();
+    if (retry?.id) return retry.id as string;
+    throw new Error(`Supabase stocks create failed (${ticker}): ${retryError?.message ?? createError.message}`);
+  }
+  return created.id as string;
+}
+
 export async function saveJobResult(result: AiJobResult) {
   const supabase = createServerSupabase();
   if (!supabase) return { saved: false, reason: "Supabase env is not configured." };
@@ -258,6 +361,7 @@ type SavedDailyPriceRow = {
 };
 
 type SavedNewsRow = {
+  stock_id?: string | null;
   title: string;
   url?: string | null;
   source?: string | null;
