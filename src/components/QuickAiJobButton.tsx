@@ -93,7 +93,7 @@ export function QuickAiJobButton() {
               <div>
                 <p className="text-sm font-black text-slate-50">⚡ AI Job 手動実行</p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Watchlist全銘柄を今すぐ更新します
+                  Watchlist全銘柄を今すぐ更新します。OpenAI/News APIキーはサーバー環境変数を使います。
                 </p>
               </div>
               <button
@@ -108,12 +108,15 @@ export function QuickAiJobButton() {
               {/* CRON_SECRET入力（本番用） */}
               <input
                 className="block w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-slate-50 placeholder-slate-600 outline-none focus:border-sky-300/50"
-                placeholder="CRON_SECRET（本番環境の場合）"
+                placeholder="CRON_SECRET（APIキーではありません）"
                 type="password"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void run(); }}
               />
+              <p className="text-[11px] leading-5 text-slate-500">
+                ここにOpenAI APIキーやNews APIキーを入れても更新されません。本番の手動実行を許可する合言葉だけを入力します。
+              </p>
               <div className="text-[11px] text-slate-500">
                 対象: {userWatchlist.items.map((i) => i.stock.ticker).join(", ") || "（銘柄なし）"}
               </div>
@@ -150,8 +153,14 @@ function resolveErrorMessage(msg: string) {
   if (l.includes("cron_secret") || l.includes("invalid") || l.includes("401")) {
     return "CRON_SECRETが違います。正しい値を入力してください。";
   }
+  if (l.includes("login is required") || msg.includes("ログインが必要")) {
+    return "手動AI Jobはログインが必要です。スマホでログインし直してから再実行してください。";
+  }
   if (l.includes("quota") || l.includes("429") || l.includes("rate limit")) {
     return "APIの利用上限に達しています。時間を置いて再実行してください。";
+  }
+  if (l.includes("月間ai利用上限") || l.includes("本日の")) {
+    return msg;
   }
   return `エラー: ${msg}`;
 }

@@ -309,12 +309,12 @@ export default function SettingsPage() {
       <section className="rounded-2xl border border-sky-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <h3 className="text-lg font-semibold text-slate-50">Manual AI Job</h3>
         <p className="mt-2 text-sm text-slate-400">
-          ローカル開発ではCRON_SECRET未設定でも実行できます。本番でCRON_SECRETを設定した場合は、手動実行時にも同じ値を入力してください。
+          ローカル開発ではCRON_SECRET未設定でも実行できます。本番でCRON_SECRETを設定した場合は、手動実行時にも同じ値を入力してください。OpenAI/News APIキーはサーバー環境変数を使います。
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
           <input
             className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-300/50"
-            placeholder="CRON_SECRET（本番手動実行用）"
+            placeholder="CRON_SECRET（APIキーではありません）"
             type="password"
             value={cronSecret}
             onChange={(event) => setCronSecret(event.target.value)}
@@ -371,7 +371,7 @@ export default function SettingsPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-300">OpenAI Usage Guard</p>
             <h3 className="mt-2 text-lg font-semibold text-slate-50">AI使用量・429フォールバック</h3>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              OpenAI呼び出し前に月間/日次上限を確認し、429や上限超過時はルールベース分析へ切り替えます。
+              AI Job開始時に月間/日次上限をJST基準で確認します。ニュースごとのOpenAI呼び出しはAPI実行ログとして残し、429時はルールベース分析へ切り替えます。
             </p>
           </div>
           <button
@@ -396,7 +396,7 @@ export default function SettingsPage() {
             <div className="mt-4 space-y-2">
               {usageSummary.recent.length ? usageSummary.recent.slice(0, 8).map((item) => (
                 <div key={item.id} className="grid gap-2 rounded-xl border border-white/10 bg-slate-950/45 p-3 text-xs text-slate-300 sm:grid-cols-[110px_1fr_auto] sm:items-center">
-                  <span className={item.status === "success" || item.status === "cache_hit" ? "font-black text-emerald-300" : item.status === "fallback" || item.status === "limit_exceeded" ? "font-black text-yellow-300" : "font-black text-red-300"}>
+                  <span className={item.status === "success" || item.status === "api_success" || item.status === "cache_hit" ? "font-black text-emerald-300" : item.status === "fallback" || item.status === "limit_exceeded" ? "font-black text-yellow-300" : "font-black text-red-300"}>
                     {item.status}
                   </span>
                   <span className="min-w-0 break-words">
@@ -547,6 +547,13 @@ function formatAiJobError(message: string) {
       "原因: OpenAI APIまたはNews APIの利用上限に達しています。",
       "対処: APIの課金/利用上限を確認するか、時間を置いて再実行してください。",
       "画面の保存済みデータは上書きしていません。"
+    ].join("\n");
+  }
+  if (lower.includes("login is required") || message.includes("ログインが必要")) {
+    return [
+      "AI Jobは実行されませんでした。",
+      "原因: 手動AI Jobはログインが必要です。",
+      "対処: スマホでログインし直してから再実行してください。"
     ].join("\n");
   }
   if (lower.includes("cron_secret") || lower.includes("invalid")) {

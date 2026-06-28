@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserFromRequest } from "@/lib/ai-usage";
+import { aiLoginRequired, callOpenAiChatWithUsageGuard, recordAiCacheHit, reserveAiUsage, resolveAiUserFromRequest } from "@/lib/ai-usage";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzeStock, scoreStock, statusFromScore } from "@/lib/scoring";
@@ -43,6 +43,12 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   try {
     const aiUser = await resolveAiUserFromRequest(request);
     const aiUserId = aiUser.id;
+    if (source === "manual" && aiLoginRequired(aiUserId)) {
+      return NextResponse.json(
+        buildErrorResult("Login is required for manual AI Job.", "本番環境の手動AI Jobはログインが必要です。スマホでログインし直してから再実行してください。"),
+        { status: 401 }
+      );
+    }
     const userPlan = await getUserPlan(aiUserId, aiUser.email);
     const lastRun = nowJst();
     const nextRun = nextRunJst();
@@ -70,6 +76,21 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
         buildErrorResult(`${userPlan.name} plan allows up to ${userPlan.watchlistItems} watchlist stocks.`),
         { status: 403 }
       );
+    }
+    if (hasAiKeys) {
+      const usageReservation = await reserveAiUsage({
+        feature: "daily_news_job",
+        userId: aiUserId,
+        userEmail: aiUser.email,
+        model: "gpt-4o-mini",
+        promptVersion: "daily-news-job-v1"
+      });
+      if (!usageReservation.allowed) {
+        return NextResponse.json(
+          buildErrorResult(usageReservation.reason ?? "AI usage limit exceeded.", usageReservation.reason),
+          { status: 429 }
+        );
+      }
     }
     const stockResults: StockAnalysisResult[] = [];
     for (const item of targets) {
@@ -381,6 +402,8 @@ URL: ${item.url ?? "なし"}
     promptVersion: "daily-news-analysis-v1",
     estimatedInputTokens: Math.ceil(prompt.length / 4),
     apiKey: key,
+    enforceUsageLimit: false,
+    successStatus: "api_success",
     body: {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],

@@ -3,8 +3,8 @@ import type { PlanDefinition } from "@/lib/plans";
 import { createServerSupabase } from "@/lib/supabase";
 import { getUserPlan } from "@/lib/user-plan";
 
-export type AiUsageFeature = "daily_news_analysis" | "spot_diagnosis" | "spot_question";
-export type AiUsageStatus = "success" | "cache_hit" | "fallback" | "limit_exceeded" | "error";
+export type AiUsageFeature = "daily_news_job" | "daily_news_analysis" | "spot_diagnosis" | "spot_question";
+export type AiUsageStatus = "success" | "api_success" | "cache_hit" | "fallback" | "limit_exceeded" | "error";
 
 export type AiUsageLog = {
   id: string;
@@ -149,31 +149,35 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
   body: Record<string, unknown>;
   apiKey?: string;
   userEmail?: string | null;
+  enforceUsageLimit?: boolean;
+  successStatus?: Extract<AiUsageStatus, "success" | "api_success">;
 }): Promise<OpenAiChatResult<T>> {
   const userId = input.userId ?? defaultUserId;
-  const plan = await getUserPlan(userId, input.userEmail);
-  const allowed = await canUseAi(input.feature, userId, plan);
-  if (!allowed.allowed) {
-    await recordAiUsage({
-      userId,
-      feature: input.feature,
-      ticker: input.ticker,
-      model: input.model,
-      promptVersion: input.promptVersion,
-      status: "limit_exceeded",
-      errorCode: "LOCAL_LIMIT",
-      errorMessage: allowed.reason,
-      usedCache: false,
-      inputTokens: 0,
-      outputTokens: 0
-    });
-    return {
-      ok: false,
-      status: 429,
-      errorCode: "LOCAL_LIMIT",
-      errorMessage: allowed.reason,
-      warning: "AI利用上限に達したため、ルールベース分析に切り替えました。"
-    };
+  if (input.enforceUsageLimit !== false) {
+    const plan = await getUserPlan(userId, input.userEmail);
+    const allowed = await canUseAi(input.feature, userId, plan);
+    if (!allowed.allowed) {
+      await recordAiUsage({
+        userId,
+        feature: input.feature,
+        ticker: input.ticker,
+        model: input.model,
+        promptVersion: input.promptVersion,
+        status: "limit_exceeded",
+        errorCode: "LOCAL_LIMIT",
+        errorMessage: allowed.reason,
+        usedCache: false,
+        inputTokens: 0,
+        outputTokens: 0
+      });
+      return {
+        ok: false,
+        status: 429,
+        errorCode: "LOCAL_LIMIT",
+        errorMessage: allowed.reason,
+        warning: "AI利用上限に達したため、ルールベース分析に切り替えました。"
+      };
+    }
   }
 
   if (!input.apiKey) {
@@ -252,12 +256,55 @@ export async function callOpenAiChatWithUsageGuard<T>(input: {
     ticker: input.ticker,
     model: input.model,
     promptVersion: input.promptVersion,
-    status: "success",
+    status: input.successStatus ?? "success",
     usedCache: false,
     inputTokens,
     outputTokens
   });
   return { ok: true, status: response.status, payload };
+}
+
+export async function reserveAiUsage(input: {
+  feature: AiUsageFeature;
+  userId?: string;
+  userEmail?: string | null;
+  ticker?: string;
+  model?: string;
+  promptVersion?: string;
+}) {
+  const userId = input.userId ?? defaultUserId;
+  const plan = await getUserPlan(userId, input.userEmail);
+  const allowed = await canUseAi(input.feature, userId, plan);
+  if (!allowed.allowed) {
+    await recordAiUsage({
+      userId,
+      feature: input.feature,
+      ticker: input.ticker,
+      model: input.model,
+      promptVersion: input.promptVersion,
+      status: "limit_exceeded",
+      errorCode: "LOCAL_LIMIT",
+      errorMessage: allowed.reason,
+      usedCache: false,
+      inputTokens: 0,
+      outputTokens: 0
+    });
+    return allowed;
+  }
+
+  await recordAiUsage({
+    userId,
+    feature: input.feature,
+    ticker: input.ticker,
+    model: input.model,
+    promptVersion: input.promptVersion,
+    status: "success",
+    usedCache: false,
+    inputTokens: 0,
+    outputTokens: 0,
+    estimatedCostUsd: 0
+  });
+  return { allowed: true };
 }
 
 export function getAiUsageSummary(userId = defaultUserId): AiUsageSummary {
@@ -368,10 +415,10 @@ type AiUsageLogRow = {
 };
 
 function aiUsageLogFromRow(row: AiUsageLogRow): AiUsageLog {
-  const feature = row.feature === "daily_news_analysis" || row.feature === "spot_diagnosis" || row.feature === "spot_question"
+  const feature = row.feature === "daily_news_job" || row.feature === "daily_news_analysis" || row.feature === "spot_diagnosis" || row.feature === "spot_question"
     ? row.feature
     : "spot_diagnosis";
-  const status = row.status === "success" || row.status === "cache_hit" || row.status === "fallback" || row.status === "limit_exceeded" || row.status === "error"
+  const status = row.status === "success" || row.status === "api_success" || row.status === "cache_hit" || row.status === "fallback" || row.status === "limit_exceeded" || row.status === "error"
     ? row.status
     : "error";
   return {
@@ -426,8 +473,8 @@ async function canUseAi(feature: AiUsageFeature, userId = defaultUserId, plan = 
     return { allowed: false, reason: `月間AI利用上限 ${monthlyLimit} 回に達しています。` };
   }
   const dailyLimit = getDailyLimit(feature, plan);
-  const today = new Date().toISOString().slice(0, 10);
-  const todaySuccess = monthlyLogs.filter((log) => log.createdAt.startsWith(today) && log.status === "success" && log.feature === feature).length;
+  const today = jstDateKey(new Date());
+  const todaySuccess = monthlyLogs.filter((log) => jstDateKey(new Date(log.createdAt)) === today && log.status === "success" && log.feature === feature).length;
   if (todaySuccess >= dailyLimit) {
     return { allowed: false, reason: `本日の${feature}利用上限 ${dailyLimit} 回に達しています。` };
   }
@@ -462,6 +509,15 @@ function parsePositiveInt(value: string | undefined, fallback: number) {
 function startOfMonthIso() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+function jstDateKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
 }
 
 function estimateTokens(value: unknown) {
