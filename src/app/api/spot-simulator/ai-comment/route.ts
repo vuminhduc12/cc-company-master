@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { aiLoginRequired, callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserFromRequest } from "@/lib/ai-usage";
 import { buildSpotSimulatorPrompt, getOpenAiModel, type AiDiagnosisMode } from "@/lib/ai-prompts";
 import { mergePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
+import { buildMacroMarketOutlook, type MacroMarketOutlook } from "@/lib/macro-market";
 import { getPricesForTicker } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzePatternSimilarity } from "@/lib/pattern-similarity";
+import { analyzeLargeMoneyFlow, type LargeMoneyFlowSignal } from "@/lib/large-money-flow";
 import { fetchStockData } from "@/lib/stock-data";
 import {
   accountTypeLabel,
@@ -46,6 +48,8 @@ type AiRiskComment = {
   };
   historicalPatternView?: string;
   newsImpactView?: string;
+  macroImpactView?: string;
+  largeMoneyFlowView?: string;
   scenarioForecast?: {
     oneToTwoWeeks: string;
     oneToThreeMonths: string;
@@ -136,7 +140,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "stock and input are required" }, { status: 400 });
     }
 
-    const enrichment = await buildRealtimeContext(body.stock, body.input, body.news ?? [], body.marketMetrics);
+    const [enrichment, macroOutlook] = await Promise.all([
+      buildRealtimeContext(body.stock, body.input, body.news ?? [], body.marketMetrics),
+      loadMacroOutlook()
+    ]);
     const enrichedInput = {
       ...body.input,
       fxRate: body.input.currency === "USD" ? enrichment.fx.rate : 1
@@ -145,7 +152,7 @@ export async function POST(request: Request) {
     const ruleRisk = buildRuleRisk(enrichedInput, simulation, enrichment.quote, enrichment.technical, enrichment.news, enrichment.fx);
     const diagnosisMode = body.diagnosisMode === "detailed" ? "detailed" : "normal";
     const userQuestion = normalizeUserQuestion(body.userQuestion);
-    const payload = { ...body, userQuestion, stock: body.stock, input: enrichedInput, simulation, realtime: enrichment, ruleRisk };
+    const payload = { ...body, userQuestion, stock: body.stock, input: enrichedInput, simulation, realtime: enrichment, macroOutlook, ruleRisk };
     const fallback = buildRuleBasedComment(payload, diagnosisMode);
 
     if (!process.env.OPENAI_API_KEY) {
@@ -162,6 +169,8 @@ export async function POST(request: Request) {
       simulation,
       ruleRisk,
       scenarioTable: simulation.scenarios,
+      macroOutlook,
+      largeMoneyFlow: enrichment.largeMoneyFlow,
       dataQuality: buildDataQuality(enrichment),
       news: enrichment.news.slice(0, 5),
       userQuestion: userQuestion || undefined
@@ -184,6 +193,19 @@ export async function POST(request: Request) {
       quote: {
         price: roundForCache(enrichment.quote.price),
         date: enrichment.technical.latestDailyDate
+      },
+      macro: macroOutlook ? {
+        scenario: macroOutlook.scenario,
+        score: macroOutlook.score,
+        generatedAt: macroOutlook.generatedAt.slice(0, 13),
+        fedPolicyDate: macroOutlook.fedPolicy?.date,
+        fedPolicyStance: macroOutlook.fedPolicy?.stance
+      } : null,
+      largeMoneyFlow: {
+        score: enrichment.largeMoneyFlow.score,
+        phase: enrichment.largeMoneyFlow.phase,
+        confidence: enrichment.largeMoneyFlow.confidence,
+        latestDailyDate: enrichment.technical.latestDailyDate
       },
       news: enrichment.news.slice(0, 5).map((item) => ({
         title: item.title,
@@ -250,6 +272,14 @@ export async function POST(request: Request) {
   }
 }
 
+async function loadMacroOutlook() {
+  try {
+    return await buildMacroMarketOutlook();
+  } catch {
+    return null;
+  }
+}
+
 function roundForCache(value: number) {
   return Number.isFinite(value) ? Number(value.toFixed(4)) : value;
 }
@@ -267,6 +297,8 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
       marketView: marketViewOr(parsed.marketView, fallback.marketView),
       historicalPatternView: stringOr(parsed.historicalPatternView, fallback.historicalPatternView ?? ""),
       newsImpactView: stringOr(parsed.newsImpactView, fallback.newsImpactView ?? ""),
+      macroImpactView: stringOr(parsed.macroImpactView, fallback.macroImpactView ?? ""),
+      largeMoneyFlowView: stringOr(parsed.largeMoneyFlowView, fallback.largeMoneyFlowView ?? ""),
       scenarioForecast: scenarioForecastOr(parsed.scenarioForecast, fallback.scenarioForecast),
       riskFilter: stringOr(parsed.riskFilter, fallback.riskFilter ?? ""),
       analystView: stringOr(parsed.analystView, fallback.analystView ?? ""),
@@ -290,8 +322,8 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
   }
 }
 
-function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input" | "simulation">> & RequestBody & { realtime: Awaited<ReturnType<typeof buildRealtimeContext>>; ruleRisk: RuleRisk }, diagnosisMode: "normal" | "detailed"): AiRiskComment {
-  const { stock, input, simulation, realtime, ruleRisk } = body;
+function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input" | "simulation">> & RequestBody & { realtime: Awaited<ReturnType<typeof buildRealtimeContext>>; macroOutlook: MacroMarketOutlook | null; ruleRisk: RuleRisk }, diagnosisMode: "normal" | "detailed"): AiRiskComment {
+  const { stock, input, simulation, realtime, macroOutlook, ruleRisk } = body;
   const rr = simulation.riskReward ?? 0;
   const latestNews = realtime.news[0];
   const account = accountTypeLabel(input.accountType);
@@ -306,11 +338,13 @@ function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input
     marketView: diagnosisMode === "detailed" ? buildFallbackMarketView(realtime, ruleRisk) : undefined,
     historicalPatternView: diagnosisMode === "detailed" ? buildFallbackHistoricalPatternView(realtime) : undefined,
     newsImpactView: diagnosisMode === "detailed" ? buildFallbackNewsImpactView(realtime) : undefined,
+    macroImpactView: diagnosisMode === "detailed" ? buildFallbackMacroImpactView(stock, macroOutlook) : undefined,
+    largeMoneyFlowView: buildFallbackLargeMoneyFlowView(realtime.largeMoneyFlow),
     scenarioForecast: diagnosisMode === "detailed" ? buildFallbackScenarioForecast(input, realtime) : undefined,
     riskFilter: diagnosisMode === "detailed" ? buildFallbackRiskFilter(stock, realtime, ruleRisk) : undefined,
     analystView: diagnosisMode === "detailed" ? buildFallbackAnalystView(stock, input, realtime, ruleRisk) : undefined,
     scenarioPrediction: diagnosisMode === "detailed" ? buildFallbackScenarioPrediction(stock, input, realtime, ruleRisk) : undefined,
-    userQuestionAnswer: userQuestion ? buildFallbackUserQuestionAnswer(userQuestion, stock, input, simulation, realtime, ruleRisk) : undefined,
+    userQuestionAnswer: userQuestion ? buildFallbackUserQuestionAnswer(userQuestion, stock, input, simulation, realtime, macroOutlook, ruleRisk) : undefined,
     entryPriceComment: `入力エントリー価格は診断時点価格から${entryGap >= 0 ? "+" : ""}${entryGap.toFixed(2)}%です。現在付近で入る前提なら、この差が大きいほどシミュレーション結果と実際の約定後リスクがずれます。`,
     positionSizeComment: `投資額は${formatYen(simulation.positionValueJpy)}です。損切り損失が口座全体の許容損失を超える場合は、株数を下げる前提で再計算してください。`,
     exitPlanComment: `利確ラインは${formatNative(simulation.takeProfit.price, input.currency)}、損切りラインは${formatNative(simulation.stopLoss.price, input.currency)}です。エントリー前にどちらを優先するか決めておくと、値動き中の判断ブレを減らせます。`,
@@ -379,8 +413,9 @@ async function buildRealtimeContext(
   const technical = buildTechnicalSnapshot(mergedPrices, latestDaily, providedMetrics);
   const patternSimilarity = analyzePatternSimilarity(mergedPrices);
   const news = newsResult.status === "fulfilled" ? newsResult.value : providedNews;
+  const largeMoneyFlow = analyzeLargeMoneyFlow(mergedPrices, news);
 
-  return { quote, fx, technical, news, patternSimilarity };
+  return { quote, fx, technical, news, patternSimilarity, largeMoneyFlow };
 }
 
 async function fetchYahooQuote(ticker: string): Promise<QuoteSnapshot> {
@@ -676,6 +711,34 @@ function buildFallbackNewsImpactView(realtime: Awaited<ReturnType<typeof buildRe
   return `取得ニュースは${bias}です。最も影響度が高い材料は「${strongest.title}」で、センチメントは${strongest.sentiment}、影響度は${strongest.impactScore}です。ただし価格に織り込み済みかは出来高と高値更新の有無で確認します。`;
 }
 
+function buildFallbackMacroImpactView(stock: Stock, macroOutlook: MacroMarketOutlook | null) {
+  if (!macroOutlook) return "CPI・FOMC政策金利・VIXなどのマクロ情報を取得できなかったため、この診断では銘柄固有データを優先します。";
+  const isUsStock = !stock.ticker.endsWith(".T") && !stock.exchange.toUpperCase().includes("TSE");
+  const scenario = macroOutlook.scenario === "risk_on" ? "リスクオン寄り" : macroOutlook.scenario === "risk_off" ? "リスクオフ警戒" : "レンジ想定";
+  const policy = macroOutlook.fedPolicy;
+  const policyText = policy
+    ? `FOMC政策金利は${policy.lowerBound !== null && policy.upperBound !== null ? `${policy.lowerBound.toFixed(2)}-${policy.upperBound.toFixed(2)}%` : "未取得"}、政策スタンスは${policy.stance === "tightening" ? "引き締め方向" : policy.stance === "easing" ? "緩和方向" : "据え置き/中立"}です。`
+    : "FOMC政策金利レンジは未取得です。";
+  const stockSensitivity = isUsStock
+    ? "米国株なので、金利上昇やVIX上昇はバリュエーションとリスク許容度に直接効きやすいです。特にグロース株・小型株・高PER銘柄では注意します。"
+    : "日本株なので直接影響は米国株より弱い一方、米金利・ドル円・米国株指数を通じた間接影響を確認します。";
+  return `マクロ環境は${scenario}、Macro Scoreは${macroOutlook.score}/100です。${policyText}${stockSensitivity} 銘柄判断では、個別ニュースや決算が強くても、Risk-Off局面では上値追いの信頼度を下げます。`;
+}
+
+function buildFallbackLargeMoneyFlowView(signal: LargeMoneyFlowSignal) {
+  const evidence = signal.evidence.length ? `根拠は「${signal.evidence.slice(0, 2).join("」「")}」です。` : "根拠はまだ限定的です。";
+  const warning = signal.warnings.length ? `注意点は「${signal.warnings[0]}」です。` : "ただし実際の機関投資家の売買を直接確認するものではありません。";
+  const phaseText = signal.phase === "Accumulation"
+    ? "仕込み・資金流入候補"
+    : signal.phase === "Breakout"
+      ? "出来高を伴うブレイク候補"
+      : signal.phase === "Distribution"
+        ? "売り抜け・分配警戒"
+        : "明確な大口資金シグナルは限定的";
+
+  return `大口資金シグナルは「${phaseText}」、スコアは${signal.score}/100、信頼度は${signal.confidence}です。${evidence}${warning} これは出来高・終値位置・高値/安値更新・ニュース反応からの推定なので、AI回答では断定ではなく補助材料として扱います。`;
+}
+
 function buildFallbackScenarioForecast(input: SpotSimulationInput, realtime: Awaited<ReturnType<typeof buildRealtimeContext>>): NonNullable<AiRiskComment["scenarioForecast"]> {
   const support = Math.min(realtime.technical.recentLow20 || realtime.quote.price, realtime.technical.ma20 || realtime.quote.price);
   const resistance = realtime.technical.recentHigh20 || realtime.quote.price;
@@ -766,6 +829,7 @@ function buildFallbackUserQuestionAnswer(
   input: SpotSimulationInput,
   simulation: SpotSimulationSummary,
   realtime: Awaited<ReturnType<typeof buildRealtimeContext>>,
+  macroOutlook: MacroMarketOutlook | null,
   ruleRisk: RuleRisk
 ) {
   const support = Math.min(realtime.technical.recentLow20 || realtime.quote.price, realtime.technical.ma20 || realtime.quote.price);
@@ -779,6 +843,8 @@ function buildFallbackUserQuestionAnswer(
   const newsText = realtime.news.length
     ? `直近ニュースは${realtime.news.length}件ありますが、ニュース本文・鮮度・決算/開示との整合確認が必要です。`
     : "直近ニュースが十分に取得できていないため、材料面の信頼度は低めに置くべきです。";
+  const macroText = buildFallbackMacroImpactView(stock, macroOutlook);
+  const largeMoneyFlowText = buildFallbackLargeMoneyFlowView(realtime.largeMoneyFlow);
 
   return [
     `質問「${question}」へのルールベース回答です。`,
@@ -787,6 +853,8 @@ function buildFallbackUserQuestionAnswer(
     `Rule 3では、今後1〜2週間は${formatNative(support, input.currency)}〜${formatNative(resistance, input.currency)}のレンジをどう抜けるかを待つ局面です。`,
     `上方向は出来高を伴って${formatNative(resistance, input.currency)}を超えて維持できるなら、${formatNative(nextResistance, input.currency)}再挑戦が条件付きシナリオになります。`,
     `下方向は損切りライン${formatNative(simulation.stopLoss.price, input.currency)}と支持線${formatNative(support, input.currency)}の距離が近いほど、通常の値幅で計画が崩れやすくなります。現在のR/Rは${rr ? rr.toFixed(2) : "-"}で、機械判定リスクは${ruleRisk.level}です。`,
+    `${largeMoneyFlowText}`,
+    `${macroText}`,
     `${patternText}`,
     `${newsText}`
   ].join("\n");

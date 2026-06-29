@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import {
@@ -32,6 +33,8 @@ type AiRiskComment = {
   };
   historicalPatternView?: string;
   newsImpactView?: string;
+  macroImpactView?: string;
+  largeMoneyFlowView?: string;
   scenarioForecast?: {
     oneToTwoWeeks: string;
     oneToThreeMonths: string;
@@ -501,13 +504,31 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
       ? "border-yellow-300/40 bg-yellow-300/15 text-yellow-100"
       : "border-emerald-300/40 bg-emerald-300/15 text-emerald-100";
   const keyChecks = comment.checklist.slice(0, 3);
+  const riskTone = comment.riskLevel === "高" ? "danger" : comment.riskLevel === "中" ? "warn" : "good";
 
   return (
     <div className="mt-4 border-t border-white/10 pt-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+      <div className={`overflow-hidden rounded-2xl border ${insightToneClass(riskTone).border} ${insightToneClass(riskTone).bg}`}>
+        <div className="flex flex-col gap-4 p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border text-lg font-black ${insightToneClass(riskTone).badge}`}>
+              {comment.riskLevel === "高" ? "!" : comment.riskLevel === "中" ? "?" : "✓"}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{mode === "detailed" ? "Detailed AI View" : "AI View"}</p>
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-black ${riskClass}`}>リスク {comment.riskLevel}</span>
+                {comment.confidence ? <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-black text-slate-200">信頼度 {comment.confidence}</span> : null}
+              </div>
+              <p className="mt-2 text-base font-black leading-7 text-slate-50 sm:text-lg">{comment.summary}</p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <CompactSignal label="モード" value={runtime?.mode === "ai" ? "AI分析" : "ルール分析"} tone={runtime?.mode === "ai" ? "info" : "warn"} />
+            <CompactSignal label="危険度" value={`リスク ${comment.riskLevel}`} tone={riskTone} />
+            <CompactSignal label="危険ライン" value={comment.scenarioForecast?.dangerLevel ?? "未算出"} tone="danger" />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-bold text-slate-400">{mode === "detailed" ? "詳細診断" : "通常診断"}</p>
             {runtime ? (
               <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${
                 runtime.mode === "ai"
@@ -523,35 +544,42 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-sm leading-6 text-slate-200">{comment.summary}</p>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <span className={`inline-flex justify-center rounded-full border px-3 py-1 text-xs font-black ${riskClass}`}>リスク {comment.riskLevel}</span>
-          {comment.confidence ? <span className="inline-flex justify-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-slate-200">信頼度 {comment.confidence}</span> : null}
         </div>
       </div>
       {comment.userQuestionAnswer ? (
-        <div className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-300/[0.07] p-4">
-          <p className="text-xs font-bold text-cyan-100">質問への回答</p>
+        <InsightCard title="質問への回答" icon="Q" tone="info" className="mt-3">
           <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.userQuestionAnswer}</p>
-        </div>
+        </InsightCard>
       ) : null}
       {comment.scenarioForecast ? (
-        <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.06] p-4">
-          <p className="text-xs font-bold text-sky-100">重要シナリオ</p>
+        <InsightCard title="重要シナリオ" icon="S" tone="info" className="mt-3">
           <div className="mt-3 grid gap-2 md:grid-cols-2">
-            <ScenarioLine label="1〜2週間" value={comment.scenarioForecast.oneToTwoWeeks} />
-            <ScenarioLine label="上昇条件" value={comment.scenarioForecast.upsideTrigger} />
-            <ScenarioLine label="下落無効化" value={comment.scenarioForecast.downsideInvalidation} />
+            <ScenarioLine label="1〜2週間" value={comment.scenarioForecast.oneToTwoWeeks} tone="info" icon="1W" />
+            <ScenarioLine label="上昇条件" value={comment.scenarioForecast.upsideTrigger} tone="good" icon="↑" />
+            <ScenarioLine label="下落無効化" value={comment.scenarioForecast.downsideInvalidation} tone="danger" icon="↓" />
           </div>
-          {comment.scenarioForecast.dangerLevel ? <p className="mt-3 text-xs font-bold text-red-200">危険ライン: {comment.scenarioForecast.dangerLevel}</p> : null}
-        </div>
+          {comment.scenarioForecast.dangerLevel ? (
+            <div className="mt-3 rounded-xl border border-red-300/30 bg-red-300/10 p-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-red-200">Danger Line</p>
+              <p className="mt-1 text-lg font-black text-red-100">{comment.scenarioForecast.dangerLevel}</p>
+            </div>
+          ) : null}
+        </InsightCard>
+      ) : null}
+      {comment.macroImpactView ? (
+        <InsightCard title="マクロ影響" icon="M" tone="macro" className="mt-3">
+          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.macroImpactView}</p>
+        </InsightCard>
+      ) : null}
+      {comment.largeMoneyFlowView ? (
+        <InsightCard title="大口資金シグナル" icon="$" tone="good" className="mt-3">
+          <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.largeMoneyFlowView}</p>
+        </InsightCard>
       ) : null}
       {comment.riskFilter ? (
-        <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
-          <p className="text-xs font-bold text-amber-100">最重要リスク</p>
+        <InsightCard title="最重要リスク" icon="!" tone="warn" className="mt-3">
           <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.riskFilter}</p>
-        </div>
+        </InsightCard>
       ) : null}
       {runtime?.warning ? (
         <p className="mt-3 rounded-xl border border-yellow-300/25 bg-yellow-300/10 p-3 text-xs leading-5 text-yellow-100">
@@ -559,10 +587,15 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
         </p>
       ) : null}
       {keyChecks.length ? (
-        <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/45 p-3">
-          <p className="text-xs font-bold text-slate-300">確認すること</p>
-          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-400">
-            {keyChecks.map((item) => <li key={item}>・{item}</li>)}
+        <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/45 p-3">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-300">Check Next</p>
+          <ul className="mt-3 grid gap-2">
+            {keyChecks.map((item, index) => (
+              <li key={item} className="flex gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-slate-300">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[10px] font-black text-slate-100">{index + 1}</span>
+                <span>{item}</span>
+              </li>
+            ))}
           </ul>
         </div>
       ) : null}
@@ -570,13 +603,89 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
   );
 }
 
-function ScenarioLine({ label, value }: { label: string; value: string }) {
+function InsightCard({
+  title,
+  icon,
+  tone,
+  className = "",
+  children
+}: {
+  title: string;
+  icon: string;
+  tone: "info" | "good" | "warn" | "danger" | "macro";
+  className?: string;
+  children: ReactNode;
+}) {
+  const toneClass = insightToneClass(tone);
   return (
-    <div className="rounded-lg border border-white/10 bg-slate-950/35 p-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-200/80">{label}</p>
+    <div className={`rounded-2xl border p-4 ${toneClass.border} ${toneClass.bg} ${className}`}>
+      <div className="flex items-center gap-2">
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-xs font-black ${toneClass.badge}`}>
+          {icon}
+        </span>
+        <p className={`text-xs font-black uppercase tracking-[0.16em] ${toneClass.title}`}>{title}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CompactSignal({ label, value, tone }: { label: string; value: string; tone: "info" | "good" | "warn" | "danger" | "macro" }) {
+  const toneClass = insightToneClass(tone);
+  return (
+    <div className={`min-w-0 rounded-xl border p-3 ${toneClass.border} bg-slate-950/35`}>
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className={`mt-1 truncate text-sm font-black ${toneClass.title}`}>{value}</p>
+    </div>
+  );
+}
+
+function ScenarioLine({ label, value, tone, icon }: { label: string; value: string; tone: "info" | "good" | "warn" | "danger" | "macro"; icon: string }) {
+  const toneClass = insightToneClass(tone);
+  return (
+    <div className={`rounded-xl border p-3 ${toneClass.border} bg-slate-950/35`}>
+      <div className="flex items-center gap-2">
+        <span className={`flex h-6 min-w-6 items-center justify-center rounded-lg px-1.5 text-[10px] font-black ${toneClass.badge}`}>{icon}</span>
+        <p className={`text-[11px] font-black uppercase tracking-[0.12em] ${toneClass.title}`}>{label}</p>
+      </div>
       <p className="mt-1 text-xs leading-5 text-slate-300">{value}</p>
     </div>
   );
+}
+
+function insightToneClass(tone: "info" | "good" | "warn" | "danger" | "macro") {
+  return {
+    info: {
+      border: "border-sky-300/22",
+      bg: "bg-sky-300/[0.06]",
+      badge: "border-sky-300/35 bg-sky-300/15 text-sky-100",
+      title: "text-sky-100"
+    },
+    good: {
+      border: "border-emerald-300/22",
+      bg: "bg-emerald-300/[0.06]",
+      badge: "border-emerald-300/35 bg-emerald-300/15 text-emerald-100",
+      title: "text-emerald-100"
+    },
+    warn: {
+      border: "border-amber-300/24",
+      bg: "bg-amber-300/[0.07]",
+      badge: "border-amber-300/40 bg-amber-300/15 text-amber-100",
+      title: "text-amber-100"
+    },
+    danger: {
+      border: "border-red-300/25",
+      bg: "bg-red-300/[0.07]",
+      badge: "border-red-300/40 bg-red-300/15 text-red-100",
+      title: "text-red-100"
+    },
+    macro: {
+      border: "border-violet-300/22",
+      bg: "bg-violet-300/[0.06]",
+      badge: "border-violet-300/35 bg-violet-300/15 text-violet-100",
+      title: "text-violet-100"
+    }
+  }[tone];
 }
 
 function toneColor(tone: "default" | "up" | "down" | "warn") {

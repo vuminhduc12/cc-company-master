@@ -3,7 +3,7 @@ import type { PlanDefinition } from "@/lib/plans";
 import { createServerSupabase } from "@/lib/supabase";
 import { getUserPlan } from "@/lib/user-plan";
 
-export type AiUsageFeature = "daily_news_job" | "daily_news_analysis" | "spot_diagnosis" | "spot_question";
+export type AiUsageFeature = "daily_news_job" | "daily_news_analysis" | "macro_market_analysis" | "spot_diagnosis" | "spot_question";
 export type AiUsageStatus = "success" | "api_success" | "cache_hit" | "fallback" | "limit_exceeded" | "error";
 
 export type AiUsageLog = {
@@ -415,7 +415,7 @@ type AiUsageLogRow = {
 };
 
 function aiUsageLogFromRow(row: AiUsageLogRow): AiUsageLog {
-  const feature = row.feature === "daily_news_job" || row.feature === "daily_news_analysis" || row.feature === "spot_diagnosis" || row.feature === "spot_question"
+  const feature = row.feature === "daily_news_job" || row.feature === "daily_news_analysis" || row.feature === "macro_market_analysis" || row.feature === "spot_diagnosis" || row.feature === "spot_question"
     ? row.feature
     : "spot_diagnosis";
   const status = row.status === "success" || row.status === "api_success" || row.status === "cache_hit" || row.status === "fallback" || row.status === "limit_exceeded" || row.status === "error"

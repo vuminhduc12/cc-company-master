@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
 import { MarketHeroStrip } from "@/components/MarketHeroStrip";
+import { MacroMarketPanel } from "@/components/MacroMarketPanel";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { QuickAddModal } from "@/components/QuickAddModal";
 import { ScoreGauge } from "@/components/ScoreGauge";
@@ -12,6 +13,7 @@ import { quoteForWatchItem, resolveVisibleWatchlist } from "@/lib/watchlist-disp
 import { DataTable } from "@/components/DataTable";
 import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
 import { FinanceDashboardChart, type IntradayCandle, type IntradayPoint } from "@/components/FinanceDashboardChart";
+import { LargeMoneyFlowPanel } from "@/components/LargeMoneyFlowPanel";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForWatchItem } from "@/components/MarketControls";
 import { NewsCard } from "@/components/NewsCard";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
@@ -283,6 +285,8 @@ export default function DashboardPage() {
 
       {/* ① マーケットサマリーヒーロー */}
       <MarketHeroStrip />
+
+      <MacroMarketPanel />
 
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(23,23,23,0.96),rgba(5,5,5,0.98)_55%,rgba(19,78,74,0.60))] text-slate-50 shadow-2xl shadow-black/35 ring-1 ring-white/5">
         <div className="sticky top-[88px] z-20 border-b border-white/10 bg-neutral-950/92 px-3 py-3 backdrop-blur sm:static sm:bg-black/24 sm:px-5">
@@ -591,6 +595,8 @@ export default function DashboardPage() {
               {selectedLive?.warning ?? activeHistoryData?.warning ?? `${selectedItem.stock.ticker}はRSI ${latest.rsi.toFixed(2)}、出来高倍率 ${volumeRatio(latest).toFixed(2)}x です。MA20維持とニュース材料を確認してください。`}
             </p>
           </div>
+
+          <LargeMoneyFlowPanel prices={chartPrices} news={liveNews} compact />
 
           <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
             <h3 className="font-semibold text-slate-50">判定根拠</h3>

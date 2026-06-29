@@ -5,6 +5,7 @@ import type { MouseEvent } from "react";
 import Link from "next/link";
 import { DataTable } from "@/components/DataTable";
 import { DataQualityPanel, freshnessTone, type DataQualityItem } from "@/components/DataQualityPanel";
+import { LargeMoneyFlowPanel } from "@/components/LargeMoneyFlowPanel";
 import { MarketBadge, MarketFilterButton, countWatchlistLists, filterItemsByWatchlistList, marketForStock, marketForWatchItem } from "@/components/MarketControls";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { ScoreGauge } from "@/components/ScoreGauge";
@@ -304,6 +305,8 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           ニュースはPositive {newsCounts.positive}件、Neutral {newsCounts.neutral}件、Negative {newsCounts.negative}件です。
         </p>
       </section>
+
+      <LargeMoneyFlowPanel prices={mergedPrices} news={tickerNews} />
 
       <section id="upside" className="scroll-mt-24">
         <SectionHeading title="上昇条件" note="上に行くために確認したい価格・出来高・トレンド条件" />

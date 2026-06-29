@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { MacroReleaseWatcher } from "@/components/MacroReleaseWatcher";
 import { NewsNotificationCenter } from "@/components/NewsNotificationCenter";
 import { PageTransition } from "@/components/PageTransition";
 import { QuickAiJobButton } from "@/components/QuickAiJobButton";
@@ -167,6 +168,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#050505] text-slate-50">
+      <MacroReleaseWatcher />
       <div className="fixed inset-0 -z-10 bg-[linear-gradient(180deg,rgba(20,184,166,0.12),rgba(5,5,5,0)_300px),linear-gradient(120deg,rgba(245,158,11,0.08),transparent_32%),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:100%_100%,100%_100%,44px_44px,44px_44px]" />
       <header className="sticky top-0 z-20 border-b border-white/10 bg-black/[0.78] backdrop-blur-xl">
         <div className="mx-auto max-w-[1600px] px-4 py-3 sm:px-6">

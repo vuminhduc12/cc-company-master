@@ -20,6 +20,8 @@ export type AiDiagnosisHistoryComment = {
   };
   historicalPatternView?: string;
   newsImpactView?: string;
+  macroImpactView?: string;
+  largeMoneyFlowView?: string;
   scenarioForecast?: {
     oneToTwoWeeks: string;
     oneToThreeMonths: string;
