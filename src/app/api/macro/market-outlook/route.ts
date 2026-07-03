@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const outlook = await buildMacroMarketOutlook();
   const searchParams = new URL(request.url).searchParams;
   const aiParam = searchParams.get("ai")?.toLowerCase();
-  const shouldUseAi = !aiParam || !["0", "false", "off"].includes(aiParam);
+  const shouldUseAi = aiParam === "1" || aiParam === "true" || aiParam === "on";
   if (!shouldUseAi) {
     return NextResponse.json({ ok: true, outlook });
   }

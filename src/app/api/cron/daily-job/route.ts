@@ -20,6 +20,12 @@ const jstFormatter = new Intl.DateTimeFormat("ja-JP", {
 });
 const newsAnalysisCacheTtlMs = 24 * 60 * 60 * 1000;
 
+function canUseOpenAiForDailyJob(source: "cron" | "manual") {
+  if (!process.env.OPENAI_API_KEY) return false;
+  if (source === "manual") return true;
+  return process.env.ENABLE_DAILY_OPENAI === "true";
+}
+
 export async function GET(request: NextRequest) {
   return runDailyJob(request, "cron");
 }
@@ -32,13 +38,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   const authError = authorize(request, source);
   if (authError) return authError;
 
-  const hasAiKeys = Boolean(process.env.OPENAI_API_KEY && process.env.NEWS_API_KEY);
-  if (source === "cron" && !hasAiKeys) {
-    return NextResponse.json(
-      buildErrorResult("AI/news API keys are not configured. Cron job skipped.", "OPENAI_API_KEYまたはNEWS_API_KEY未設定のため自動実行をスキップしました。株価はYahoo Finance優先で取得するためSTOCK_API_KEYは任意です。"),
-      { status: 412 }
-    );
-  }
+  const canUseOpenAi = canUseOpenAiForDailyJob(source);
 
   try {
     const aiUser = await resolveAiUserFromRequest(request);
@@ -77,7 +77,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
         { status: 403 }
       );
     }
-    if (hasAiKeys) {
+    if (canUseOpenAi) {
       const usageReservation = await reserveAiUsage({
         feature: "daily_news_job",
         userId: aiUserId,
@@ -94,7 +94,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     }
     const stockResults: StockAnalysisResult[] = [];
     for (const item of targets) {
-      stockResults.push(await buildStockAnalysis(item.stock, hasAiKeys, aiUserId, aiUser.email));
+      stockResults.push(await buildStockAnalysis(item.stock, canUseOpenAi, aiUserId, aiUser.email));
     }
     const successfulResults = stockResults.filter((item) => !item.error);
     if (successfulResults.length === 0) {
@@ -106,7 +106,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     const aiMarketScore = Math.round(successfulResults.reduce((sum, item) => sum + item.aiMarketScore, 0) / successfulResults.length);
     const latest = primary.price;
     const tasks = buildTasks(lastRun, nextRun, successfulResults, stockResults);
-    const executionAudit = buildExecutionAudit(stockResults, lastRun, hasAiKeys);
+    const executionAudit = buildExecutionAudit(stockResults, lastRun, canUseOpenAi);
     const result: AiJobResult = {
       ok: true,
       mode: successfulResults.every((item) => item.warning?.includes("ローカル履歴データ")) ? "mock" : "live",
@@ -121,7 +121,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
       executionAudit,
       tasks,
       report: buildPortfolioReport(successfulResults, aiMarketScore, nextRun),
-      warning: buildWarning(hasAiKeys, stockResults, executionAudit)
+      warning: buildWarning(canUseOpenAi, stockResults, executionAudit)
     };
     if (serverWatchlist?.warning) {
       result.warning = result.warning ? `${result.warning} ${serverWatchlist.warning}` : serverWatchlist.warning;
@@ -175,14 +175,14 @@ function authorize(request: NextRequest, source: "cron" | "manual") {
   return NextResponse.json(buildErrorResult("Invalid CRON_SECRET."), { status: 401 });
 }
 
-async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean, aiUserId: string, aiUserEmail: string | null): Promise<StockAnalysisResult> {
+async function buildStockAnalysis(stock: Stock, canUseOpenAi: boolean, aiUserId: string, aiUserEmail: string | null): Promise<StockAnalysisResult> {
   try {
     const stockData = await fetchStockData(stock.ticker);
     const priceData = stockData.prices;
     const latest = priceData[priceData.length - 1];
     if (!latest) throw new Error("No price data available.");
     const rawNews = await fetchNews(stock);
-    const analyzedNews = await analyzeNews(rawNews, latest, stock, aiUserId, aiUserEmail);
+    const analyzedNews = await analyzeNews(rawNews, latest, stock, aiUserId, aiUserEmail, canUseOpenAi);
     const scoreAnalysis = analyzeStock(latest, analyzedNews);
     const aiMarketScore = scoreAnalysis.score;
     const status = statusFromScore(aiMarketScore);
@@ -207,7 +207,7 @@ async function buildStockAnalysis(stock: Stock, hasAiKeys: boolean, aiUserId: st
   } catch (error) {
     const fallbackPrices = getPricesForTicker(stock.ticker);
     const fallbackPrice = fallbackPrices?.[fallbackPrices.length - 1] ?? prices[prices.length - 1];
-    const fallbackNews = hasAiKeys ? [] : mockNews.filter((item) => item.ticker === stock.ticker || stock.ticker === "RGTI");
+    const fallbackNews = canUseOpenAi ? [] : mockNews.filter((item) => item.ticker === stock.ticker || stock.ticker === "RGTI");
     const message = error instanceof Error ? error.message : "Unknown error";
     return {
       stock,
@@ -295,9 +295,9 @@ async function fetchNews(stock: Stock): Promise<NewsItem[]> {
   }));
 }
 
-async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock, aiUserId: string, aiUserEmail: string | null): Promise<NewsItem[]> {
+async function analyzeNews(items: NewsItem[], price: DailyPrice, stock: Stock, aiUserId: string, aiUserEmail: string | null, canUseOpenAi: boolean): Promise<NewsItem[]> {
   return Promise.all(items.map(async (item) => {
-    const analysis = await analyzeOneNews(item, price, stock, aiUserId, aiUserEmail).catch((error) => {
+    const analysis = await analyzeOneNews(item, price, stock, aiUserId, aiUserEmail, canUseOpenAi).catch((error) => {
       const fallback = ruleBasedAnalysis(item, price);
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
@@ -340,8 +340,14 @@ type OpenAiNewsPayload = {
   };
 };
 
-async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock, aiUserId: string, aiUserEmail: string | null) {
+async function analyzeOneNews(item: NewsItem, price: DailyPrice, stock: Stock, aiUserId: string, aiUserEmail: string | null, canUseOpenAi: boolean) {
   const fallback = ruleBasedAnalysis(item, price);
+  if (!canUseOpenAi) {
+    return {
+      ...fallback,
+      aiComment: `${fallback.aiComment} 毎朝の自動ジョブではOpenAI分析を無効化しているため、ルールベース分析です。手動AI Jobや個別診断ではOPENAI_API_KEYがあればOpenAIを使います。`
+    };
+  }
   const key = process.env.OPENAI_API_KEY;
   if (!key) return fallback;
   const cacheKey = buildOpenAiCacheKey("daily-news-analysis-v1", {
@@ -520,8 +526,8 @@ function buildPortfolioReport(results: StockAnalysisResult[], aiMarketScore: num
   };
 }
 
-function buildExecutionAudit(results: StockAnalysisResult[], lastRun: string, hasAiKeys: boolean): AiJobExecutionAudit {
-  const stocks = results.map((item) => buildStockExecutionAudit(item, hasAiKeys));
+function buildExecutionAudit(results: StockAnalysisResult[], lastRun: string, canUseOpenAi: boolean): AiJobExecutionAudit {
+  const stocks = results.map((item) => buildStockExecutionAudit(item, canUseOpenAi));
   const latestNewsDate = latestDate(stocks.map((item) => item.latestNewsDate).filter((value): value is string => Boolean(value)));
   return {
     lastRun,
@@ -537,11 +543,11 @@ function buildExecutionAudit(results: StockAnalysisResult[], lastRun: string, ha
   };
 }
 
-function buildStockExecutionAudit(item: StockAnalysisResult, hasAiKeys: boolean): AiStockExecutionAudit {
-  const ruleNewsCount = item.news.filter((newsItem) => isRuleBasedNewsAnalysis(newsItem, hasAiKeys)).length;
+function buildStockExecutionAudit(item: StockAnalysisResult, canUseOpenAi: boolean): AiStockExecutionAudit {
+  const ruleNewsCount = item.news.filter((newsItem) => isRuleBasedNewsAnalysis(newsItem, canUseOpenAi)).length;
   const aiNewsCount = Math.max(item.news.length - ruleNewsCount, 0);
   const latestNewsDate = latestDate(item.news.map((newsItem) => newsItem.publishedAt));
-  const fallbackReason = buildFallbackReason(item, ruleNewsCount, hasAiKeys);
+  const fallbackReason = buildFallbackReason(item, ruleNewsCount, canUseOpenAi);
   return {
     ticker: item.stock.ticker,
     status: item.error ? "Error" : "Completed",
@@ -557,8 +563,8 @@ function buildStockExecutionAudit(item: StockAnalysisResult, hasAiKeys: boolean)
   };
 }
 
-function isRuleBasedNewsAnalysis(item: NewsItem, hasAiKeys: boolean) {
-  if (!hasAiKeys) return true;
+function isRuleBasedNewsAnalysis(item: NewsItem, canUseOpenAi: boolean) {
+  if (!canUseOpenAi) return true;
   const comment = `${item.aiComment} ${item.summary} ${item.risk} ${item.opportunity}`;
   return comment.includes("ルールベース")
     || comment.includes("OpenAIの利用上限")
@@ -567,10 +573,10 @@ function isRuleBasedNewsAnalysis(item: NewsItem, hasAiKeys: boolean) {
     || comment.includes("簡易分析");
 }
 
-function buildFallbackReason(item: StockAnalysisResult, ruleNewsCount: number, hasAiKeys: boolean) {
+function buildFallbackReason(item: StockAnalysisResult, ruleNewsCount: number, canUseOpenAi: boolean) {
   if (item.error) return item.error;
-  if (!hasAiKeys) return "OPENAI_API_KEYまたはNEWS_API_KEY未設定のため、ニュース分析はルールベースです。";
-  const fallbackNews = item.news.find((newsItem) => isRuleBasedNewsAnalysis(newsItem, hasAiKeys));
+  if (!canUseOpenAi) return "毎朝の自動ジョブではOpenAI分析を無効化しているため、ニュース分析はルールベースです。";
+  const fallbackNews = item.news.find((newsItem) => isRuleBasedNewsAnalysis(newsItem, canUseOpenAi));
   if (fallbackNews?.aiComment.includes("利用上限") || fallbackNews?.aiComment.includes("429")) return "OpenAI 429のため、一部ニュースをルールベース分析に切り替えました。";
   if (fallbackNews?.aiComment.includes("OpenAI API error")) return "OpenAI APIエラーのため、一部ニュースをルールベース分析に切り替えました。";
   if (fallbackNews?.aiComment.includes("JSON解析")) return "OpenAI応答のJSON解析に失敗したため、一部ニュースをルールベース分析に切り替えました。";
@@ -586,9 +592,9 @@ function latestDate(values: string[]) {
   return normalized.at(-1);
 }
 
-function buildWarning(hasAiKeys: boolean, results: StockAnalysisResult[], executionAudit?: AiJobExecutionAudit) {
+function buildWarning(canUseOpenAi: boolean, results: StockAnalysisResult[], executionAudit?: AiJobExecutionAudit) {
   const warnings = [];
-  if (!hasAiKeys) warnings.push("OPENAI_API_KEYまたはNEWS_API_KEY未設定のため、ニュース分析はmock-dataまたはルールベースで実行しました。");
+  if (!canUseOpenAi) warnings.push("毎朝の自動ジョブではOpenAI分析を無効化しています。ニュース分析はmock-dataまたはルールベースで実行しました。");
   const ruleFallbacks = executionAudit?.stocks.filter((item) => item.ruleNewsCount > 0 && item.fallbackReason).map((item) => `${item.ticker}: ${item.fallbackReason}`) ?? [];
   warnings.push(...ruleFallbacks);
   const stockWarnings = results.flatMap((item) => item.warning ? [`${item.stock.ticker}: ${item.warning}`] : []);

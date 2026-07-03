@@ -15,6 +15,7 @@ export async function GET() {
     supabaseServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     cronSecret: Boolean(process.env.CRON_SECRET),
     openaiApiKey: Boolean(process.env.OPENAI_API_KEY),
+    dailyOpenAiEnabled: process.env.ENABLE_DAILY_OPENAI === "true",
     newsApiKey: Boolean(process.env.NEWS_API_KEY),
     twelveDataKey: Boolean(process.env.TWELVE_DATA_KEY),
     stockDataProvider: process.env.STOCK_DATA_PROVIDER ?? "(default: yahoo)"
@@ -88,6 +89,9 @@ export async function GET() {
   }
   if (!config.openaiApiKey || !config.newsApiKey) {
     recommendations.push("OPENAI_API_KEY と NEWS_API_KEY を設定するとAI分析が本番で動きます。");
+  }
+  if (config.openaiApiKey && !config.dailyOpenAiEnabled) {
+    recommendations.push("ENABLE_DAILY_OPENAI が true ではないため、毎朝の自動ジョブではOpenAIを使わず、手動診断のみOpenAIを使います。");
   }
   if (!config.twelveDataKey) {
     recommendations.push("TWELVE_DATA_KEY を設定すると株価データの鮮度が安定します（無料枠あり）。");

@@ -6,6 +6,7 @@ import { buildMacroMarketOutlook, type MacroMarketOutlook } from "@/lib/macro-ma
 import { getPricesForTicker } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
 import { analyzePatternSimilarity } from "@/lib/pattern-similarity";
+import { fetchSecCompanyFundamentals, type SecFilingSummary } from "@/lib/sec-edgar";
 import { analyzeLargeMoneyFlow, type LargeMoneyFlowSignal } from "@/lib/large-money-flow";
 import { fetchStockData } from "@/lib/stock-data";
 import {
@@ -41,6 +42,10 @@ type AiRiskComment = {
   dataFreshness: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  irView?: string;
+  balanceSheetView?: string;
+  incomeStatementView?: string;
+  businessValueView?: string;
   marketView?: {
     scenario: "upside" | "range" | "downside";
     confidence: "低" | "中" | "高";
@@ -103,6 +108,40 @@ type TechnicalSnapshot = {
   source: string;
 };
 
+type FundamentalSnapshot = {
+  source: string;
+  asOf: string;
+  dataAvailable: boolean;
+  businessSummary: string;
+  financialCurrency: string;
+  marketCap: number | null;
+  enterpriseValue: number | null;
+  trailingPe: number | null;
+  forwardPe: number | null;
+  priceToBook: number | null;
+  enterpriseToRevenue: number | null;
+  enterpriseToEbitda: number | null;
+  totalRevenue: number | null;
+  revenueGrowth: number | null;
+  grossMargins: number | null;
+  operatingMargins: number | null;
+  profitMargins: number | null;
+  ebitda: number | null;
+  netIncomeToCommon: number | null;
+  totalCash: number | null;
+  totalDebt: number | null;
+  currentRatio: number | null;
+  debtToEquity: number | null;
+  bookValue: number | null;
+  returnOnEquity: number | null;
+  balanceSheetView: string;
+  incomeStatementView: string;
+  valuationView: string;
+  filingView?: string;
+  latestFilings?: SecFilingSummary[];
+  limitations: string[];
+};
+
 type RuleRisk = {
   score: number;
   level: AiRiskComment["riskLevel"];
@@ -149,7 +188,7 @@ export async function POST(request: Request) {
       fxRate: body.input.currency === "USD" ? enrichment.fx.rate : 1
     };
     const simulation = calculateSpotSimulation(enrichedInput);
-    const ruleRisk = buildRuleRisk(enrichedInput, simulation, enrichment.quote, enrichment.technical, enrichment.news, enrichment.fx);
+    const ruleRisk = buildRuleRisk(enrichedInput, simulation, enrichment.quote, enrichment.technical, enrichment.news, enrichment.fx, enrichment.fundamentals);
     const diagnosisMode = body.diagnosisMode === "detailed" ? "detailed" : "normal";
     const userQuestion = normalizeUserQuestion(body.userQuestion);
     const payload = { ...body, userQuestion, stock: body.stock, input: enrichedInput, simulation, realtime: enrichment, macroOutlook, ruleRisk };
@@ -171,6 +210,7 @@ export async function POST(request: Request) {
       scenarioTable: simulation.scenarios,
       macroOutlook,
       largeMoneyFlow: enrichment.largeMoneyFlow,
+      fundamentals: enrichment.fundamentals,
       dataQuality: buildDataQuality(enrichment),
       news: enrichment.news.slice(0, 5),
       userQuestion: userQuestion || undefined
@@ -206,6 +246,23 @@ export async function POST(request: Request) {
         phase: enrichment.largeMoneyFlow.phase,
         confidence: enrichment.largeMoneyFlow.confidence,
         latestDailyDate: enrichment.technical.latestDailyDate
+      },
+      fundamentals: {
+        dataAvailable: enrichment.fundamentals.dataAvailable,
+        source: enrichment.fundamentals.source,
+        asOf: enrichment.fundamentals.asOf.slice(0, 13),
+        latestFilings: enrichment.fundamentals.latestFilings?.slice(0, 3).map((filing) => ({
+          form: filing.form,
+          filingDate: filing.filingDate,
+          reportDate: filing.reportDate,
+          url: filing.url
+        })),
+        marketCap: enrichment.fundamentals.marketCap,
+        enterpriseValue: enrichment.fundamentals.enterpriseValue,
+        trailingPe: enrichment.fundamentals.trailingPe,
+        priceToBook: enrichment.fundamentals.priceToBook,
+        revenueGrowth: enrichment.fundamentals.revenueGrowth,
+        profitMargins: enrichment.fundamentals.profitMargins
       },
       news: enrichment.news.slice(0, 5).map((item) => ({
         title: item.title,
@@ -294,6 +351,10 @@ function parseAiComment(content: unknown, fallback: AiRiskComment): AiRiskCommen
       dataFreshness: stringOr(parsed.dataFreshness, fallback.dataFreshness),
       riskLevel: parsed.riskLevel === "低" || parsed.riskLevel === "中" || parsed.riskLevel === "高" ? parsed.riskLevel : fallback.riskLevel,
       confidence: parsed.confidence === "低" || parsed.confidence === "中" || parsed.confidence === "高" ? parsed.confidence : fallback.confidence,
+      irView: stringOr(parsed.irView, fallback.irView ?? ""),
+      balanceSheetView: stringOr(parsed.balanceSheetView, fallback.balanceSheetView ?? ""),
+      incomeStatementView: stringOr(parsed.incomeStatementView, fallback.incomeStatementView ?? ""),
+      businessValueView: stringOr(parsed.businessValueView, fallback.businessValueView ?? ""),
       marketView: marketViewOr(parsed.marketView, fallback.marketView),
       historicalPatternView: stringOr(parsed.historicalPatternView, fallback.historicalPatternView ?? ""),
       newsImpactView: stringOr(parsed.newsImpactView, fallback.newsImpactView ?? ""),
@@ -332,9 +393,13 @@ function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input
 
   const comment: AiRiskComment = {
     summary: `${stock.ticker}の現物エントリー案は、診断時点価格${formatNative(realtime.quote.price, input.currency)}に対して入力エントリー価格が${formatNative(input.entryPrice, input.currency)}です。損切り時の手取り損益は${formatSignedYen(simulation.stopLoss.netPnlJpy)}、利確時の手取り損益は${formatSignedYen(simulation.takeProfit.netPnlJpy)}、リスクリワードは${rr ? rr.toFixed(2) : "-"}で、ルール判定リスクは「${ruleRisk.level}」です。`,
-    dataFreshness: `価格: ${realtime.quote.source} ${formatDateTime(realtime.quote.asOf)} / 日足: ${realtime.technical.source} ${realtime.technical.latestDailyDate} / 為替: ${realtime.fx.source} ${formatDateTime(realtime.fx.asOf)}`,
+    dataFreshness: `価格: ${realtime.quote.source} ${formatDateTime(realtime.quote.asOf)} / 日足: ${realtime.technical.source} ${realtime.technical.latestDailyDate} / 財務: ${realtime.fundamentals.source} ${formatDateTime(realtime.fundamentals.asOf)} / 為替: ${realtime.fx.source} ${formatDateTime(realtime.fx.asOf)}`,
     riskLevel: ruleRisk.level,
-    confidence: realtime.quote.source.includes("fallback") || realtime.technical.source === "fallback" ? "低" : realtime.news.length ? "中" : "低",
+    confidence: realtime.quote.source.includes("fallback") || realtime.technical.source === "fallback" || !realtime.fundamentals.dataAvailable ? "低" : realtime.news.length ? "中" : "低",
+    irView: diagnosisMode === "detailed" ? buildFallbackIrView(stock, realtime) : undefined,
+    balanceSheetView: diagnosisMode === "detailed" ? realtime.fundamentals.balanceSheetView : undefined,
+    incomeStatementView: diagnosisMode === "detailed" ? realtime.fundamentals.incomeStatementView : undefined,
+    businessValueView: diagnosisMode === "detailed" ? buildFallbackBusinessValueView(realtime.fundamentals) : undefined,
     marketView: diagnosisMode === "detailed" ? buildFallbackMarketView(realtime, ruleRisk) : undefined,
     historicalPatternView: diagnosisMode === "detailed" ? buildFallbackHistoricalPatternView(realtime) : undefined,
     newsImpactView: diagnosisMode === "detailed" ? buildFallbackNewsImpactView(realtime) : undefined,
@@ -373,7 +438,8 @@ function buildRuleBasedComment(body: Required<Pick<RequestBody, "stock" | "input
       "出来高が急減した場合、低位株・小型株では想定価格での退出が難しくなることがあります。"
     ];
     comment.blindSpots = [
-      realtime.news.length ? "ニュースは取得記事ベースであり、適時開示や決算資料を完全に網羅しているわけではありません。" : "ニュースが未取得のため、材料面の見落としリスクがあります。",
+      realtime.news.length ? "IR/ニュースは取得記事ベースであり、適時開示・決算資料・10-K/10-Qを完全に網羅しているわけではありません。" : "IR/ニュースが未取得のため、材料面の見落としリスクがあります。",
+      ...realtime.fundamentals.limitations.slice(0, 1),
       "税金はアプリ内の概算であり、実際の口座区分・手数料体系・為替レートで差が出ます。",
       "ATRは日足ベースの目安で、当日中の急変や時間外取引を完全には表しません。"
     ];
@@ -393,11 +459,12 @@ async function buildRealtimeContext(
   providedNews: Pick<NewsItem, "title" | "publishedAt" | "sentiment" | "impactScore" | "summary">[],
   providedMetrics?: RequestBody["marketMetrics"]
 ) {
-  const [quoteResult, dailyResult, fxResult, newsResult] = await Promise.allSettled([
+  const [quoteResult, dailyResult, fxResult, newsResult, fundamentalResult] = await Promise.allSettled([
     fetchYahooQuote(stock.ticker),
     fetchStockData(stock.ticker),
     input.currency === "USD" ? fetchUsdJpyRate() : Promise.resolve({ rate: 1, source: "JPY", asOf: new Date().toISOString(), ok: true } satisfies FxSnapshot),
-    fetchRealtimeNews(stock, providedNews)
+    fetchRealtimeNews(stock, providedNews),
+    fetchFundamentals(stock)
   ]);
 
   const dailyData = dailyResult.status === "fulfilled" ? dailyResult.value : null;
@@ -414,8 +481,203 @@ async function buildRealtimeContext(
   const patternSimilarity = analyzePatternSimilarity(mergedPrices);
   const news = newsResult.status === "fulfilled" ? newsResult.value : providedNews;
   const largeMoneyFlow = analyzeLargeMoneyFlow(mergedPrices, news);
+  const fundamentals = fundamentalResult.status === "fulfilled" ? fundamentalResult.value : buildMissingFundamentals("fundamental data fetch failed");
 
-  return { quote, fx, technical, news, patternSimilarity, largeMoneyFlow };
+  return { quote, fx, technical, news, patternSimilarity, largeMoneyFlow, fundamentals };
+}
+
+async function fetchFundamentals(stock: Stock): Promise<FundamentalSnapshot> {
+  const sec = await tryFetchSecCompanyFundamentals(stock);
+  if (sec) {
+    return {
+      source: "SEC EDGAR Submissions + Company Facts",
+      asOf: sec.asOf,
+      dataAvailable: true,
+      businessSummary: sec.businessSummary,
+      financialCurrency: "USD",
+      marketCap: null,
+      enterpriseValue: null,
+      trailingPe: null,
+      forwardPe: null,
+      priceToBook: null,
+      enterpriseToRevenue: null,
+      enterpriseToEbitda: null,
+      totalRevenue: sec.annual.revenue?.value ?? sec.quarter.revenue?.value ?? null,
+      revenueGrowth: sec.derived.annualRevenueGrowth ?? sec.derived.quarterlyRevenueGrowth,
+      grossMargins: ratioOrNull(sec.annual.grossProfit?.value, sec.annual.revenue?.value) ?? ratioOrNull(sec.quarter.grossProfit?.value, sec.quarter.revenue?.value),
+      operatingMargins: ratioOrNull(sec.annual.operatingIncome?.value, sec.annual.revenue?.value) ?? ratioOrNull(sec.quarter.operatingIncome?.value, sec.quarter.revenue?.value),
+      profitMargins: sec.derived.annualProfitMargin ?? sec.derived.quarterlyProfitMargin,
+      ebitda: null,
+      netIncomeToCommon: sec.annual.netIncome?.value ?? sec.quarter.netIncome?.value ?? null,
+      totalCash: sec.balanceSheet.cash?.value ?? null,
+      totalDebt: sec.balanceSheet.debt?.value ?? null,
+      currentRatio: sec.derived.currentRatio,
+      debtToEquity: sec.derived.debtToEquity === null ? null : sec.derived.debtToEquity * 100,
+      bookValue: sec.balanceSheet.equity?.value ?? null,
+      returnOnEquity: ratioOrNull(sec.annual.netIncome?.value, sec.balanceSheet.equity?.value),
+      balanceSheetView: sec.balanceSheetView,
+      incomeStatementView: sec.incomeStatementView,
+      valuationView: "SEC EDGARは時価総額・EVなどの市場価値指標ではなく、10-K/10-QのXBRL財務値を一次情報として取得しています。企業価値倍率は株価/時価総額データと組み合わせて評価してください。",
+      filingView: sec.filingView,
+      latestFilings: sec.filings.slice(0, 10),
+      limitations: sec.limitations
+    };
+  }
+
+  const symbol = normalizeYahooSymbol(stock.ticker);
+  const modules = [
+    "assetProfile",
+    "financialData",
+    "defaultKeyStatistics",
+    "summaryDetail",
+    "price"
+  ].join(",");
+  const response = await fetch(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`, {
+    headers: { "user-agent": "Mozilla/5.0" },
+    next: { revalidate: 0 }
+  });
+  if (!response.ok) throw new Error(`Yahoo fundamentals error: ${response.status}`);
+
+  const payload = await response.json() as {
+    quoteSummary?: {
+      result?: Array<{
+        assetProfile?: { longBusinessSummary?: string };
+        price?: { currency?: string; marketCap?: YahooRawValue };
+        financialData?: Record<string, YahooRawValue | undefined>;
+        defaultKeyStatistics?: Record<string, YahooRawValue | undefined>;
+        summaryDetail?: Record<string, YahooRawValue | undefined>;
+      }>;
+      error?: { description?: string };
+    };
+  };
+  const result = payload.quoteSummary?.result?.[0];
+  if (!result) throw new Error(payload.quoteSummary?.error?.description ?? `${stock.ticker}: fundamentals not found`);
+
+  const financialData = result.financialData ?? {};
+  const statistics = result.defaultKeyStatistics ?? {};
+  const summary = result.summaryDetail ?? {};
+  const marketCap = rawNumber(result.price?.marketCap) ?? rawNumber(summary.marketCap);
+  const enterpriseValue = rawNumber(statistics.enterpriseValue);
+  const totalRevenue = rawNumber(financialData.totalRevenue);
+  const totalDebt = rawNumber(financialData.totalDebt);
+  const totalCash = rawNumber(financialData.totalCash);
+  const netDebt = totalDebt !== null || totalCash !== null ? (totalDebt ?? 0) - (totalCash ?? 0) : null;
+  const revenueGrowth = rawNumber(financialData.revenueGrowth);
+  const profitMargins = rawNumber(financialData.profitMargins);
+  const operatingMargins = rawNumber(financialData.operatingMargins);
+
+  return {
+    source: "Yahoo Finance quoteSummary",
+    asOf: new Date().toISOString(),
+    dataAvailable: true,
+    businessSummary: result.assetProfile?.longBusinessSummary?.slice(0, 1200) ?? "",
+    financialCurrency: result.price?.currency ?? "unknown",
+    marketCap,
+    enterpriseValue,
+    trailingPe: rawNumber(summary.trailingPE),
+    forwardPe: rawNumber(summary.forwardPE),
+    priceToBook: rawNumber(statistics.priceToBook),
+    enterpriseToRevenue: rawNumber(statistics.enterpriseToRevenue),
+    enterpriseToEbitda: rawNumber(statistics.enterpriseToEbitda),
+    totalRevenue,
+    revenueGrowth,
+    grossMargins: rawNumber(financialData.grossMargins),
+    operatingMargins,
+    profitMargins,
+    ebitda: rawNumber(financialData.ebitda),
+    netIncomeToCommon: rawNumber(financialData.netIncomeToCommon),
+    totalCash,
+    totalDebt,
+    currentRatio: rawNumber(financialData.currentRatio),
+    debtToEquity: rawNumber(financialData.debtToEquity),
+    bookValue: rawNumber(statistics.bookValue),
+    returnOnEquity: rawNumber(financialData.returnOnEquity),
+    balanceSheetView: buildBalanceSheetView(totalCash, totalDebt, netDebt, rawNumber(financialData.currentRatio), rawNumber(financialData.debtToEquity), result.price?.currency ?? "unknown"),
+    incomeStatementView: buildIncomeStatementView(totalRevenue, revenueGrowth, profitMargins, operatingMargins, result.price?.currency ?? "unknown"),
+    valuationView: buildValuationView(marketCap, enterpriseValue, rawNumber(summary.trailingPE), rawNumber(statistics.priceToBook), rawNumber(statistics.enterpriseToRevenue), result.price?.currency ?? "unknown"),
+    limitations: [
+      "Yahoo Finance quoteSummaryの主要指標であり、監査済み決算短信・有価証券報告書・10-K/10-Qの完全な代替ではありません。",
+      "四半期別のBS/PL明細や注記は未取得のため、AIは未取得項目を推測してはいけません。"
+    ]
+  };
+}
+
+function ratioOrNull(numerator: number | undefined, denominator: number | undefined) {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || !denominator) return null;
+  return Number(numerator) / Number(denominator);
+}
+
+async function tryFetchSecCompanyFundamentals(stock: Stock) {
+  try {
+    return await fetchSecCompanyFundamentals(stock);
+  } catch {
+    return null;
+  }
+}
+
+type YahooRawValue = { raw?: number; fmt?: string } | number | null;
+
+function rawNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value && typeof value === "object" && "raw" in value) {
+    const raw = (value as { raw?: unknown }).raw;
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+  }
+  return null;
+}
+
+function buildMissingFundamentals(reason: string): FundamentalSnapshot {
+  return {
+    source: "not available",
+    asOf: new Date().toISOString(),
+    dataAvailable: false,
+    businessSummary: "",
+    financialCurrency: "unknown",
+    marketCap: null,
+    enterpriseValue: null,
+    trailingPe: null,
+    forwardPe: null,
+    priceToBook: null,
+    enterpriseToRevenue: null,
+    enterpriseToEbitda: null,
+    totalRevenue: null,
+    revenueGrowth: null,
+    grossMargins: null,
+    operatingMargins: null,
+    profitMargins: null,
+    ebitda: null,
+    netIncomeToCommon: null,
+    totalCash: null,
+    totalDebt: null,
+    currentRatio: null,
+    debtToEquity: null,
+    bookValue: null,
+    returnOnEquity: null,
+    balanceSheetView: `BS主要指標を取得できませんでした。理由: ${reason}`,
+    incomeStatementView: `PL主要指標を取得できませんでした。理由: ${reason}`,
+    valuationView: `企業価値・バリュエーション指標を取得できませんでした。理由: ${reason}`,
+    limitations: ["ファンダメンタル未取得のため、AIはニュース・テクニカル・統計だけで高信頼の企業価値判断をしてはいけません。"]
+  };
+}
+
+function buildBalanceSheetView(totalCash: number | null, totalDebt: number | null, netDebt: number | null, currentRatio: number | null, debtToEquity: number | null, currency: string) {
+  const liquidity = currentRatio === null ? "流動比率は未取得" : currentRatio >= 1.5 ? `流動比率${currentRatio.toFixed(2)}で短期支払い余力は比較的厚い` : `流動比率${currentRatio.toFixed(2)}で短期流動性に注意`;
+  const leverage = debtToEquity === null ? "D/Eは未取得" : debtToEquity >= 150 ? `D/E ${debtToEquity.toFixed(1)}で負債依存が重い` : `D/E ${debtToEquity.toFixed(1)}で負債負担は過度ではない`;
+  return `${liquidity}。${leverage}。現金${formatCompactMoney(totalCash, currency)}、有利子負債${formatCompactMoney(totalDebt, currency)}、ネット負債${formatCompactMoney(netDebt, currency)}。`;
+}
+
+function buildIncomeStatementView(totalRevenue: number | null, revenueGrowth: number | null, profitMargins: number | null, operatingMargins: number | null, currency: string) {
+  const growth = revenueGrowth === null ? "売上成長率は未取得" : revenueGrowth >= 0.15 ? `売上成長率${formatRatioPercent(revenueGrowth)}で高成長` : revenueGrowth >= 0 ? `売上成長率${formatRatioPercent(revenueGrowth)}で成長は限定的` : `売上成長率${formatRatioPercent(revenueGrowth)}で減収`;
+  const profitability = profitMargins === null ? "純利益率は未取得" : profitMargins > 0 ? `純利益率${formatRatioPercent(profitMargins)}で黒字` : `純利益率${formatRatioPercent(profitMargins)}で赤字または低収益`;
+  const operating = operatingMargins === null ? "営業利益率は未取得" : `営業利益率${formatRatioPercent(operatingMargins)}`;
+  return `売上高${formatCompactMoney(totalRevenue, currency)}。${growth}。${operating}、${profitability}。`;
+}
+
+function buildValuationView(marketCap: number | null, enterpriseValue: number | null, trailingPe: number | null, priceToBook: number | null, evToRevenue: number | null, currency: string) {
+  const pe = trailingPe === null ? "PER未取得" : trailingPe > 80 ? `PER ${trailingPe.toFixed(1)}で利益対比では高い` : trailingPe > 0 ? `PER ${trailingPe.toFixed(1)}` : "PERは赤字等で評価困難";
+  const pb = priceToBook === null ? "PBR未取得" : `PBR ${priceToBook.toFixed(2)}`;
+  const evSales = evToRevenue === null ? "EV/Sales未取得" : `EV/Sales ${evToRevenue.toFixed(2)}`;
+  return `時価総額${formatCompactMoney(marketCap, currency)}、企業価値EV${formatCompactMoney(enterpriseValue, currency)}。${pe}、${pb}、${evSales}。`;
 }
 
 async function fetchYahooQuote(ticker: string): Promise<QuoteSnapshot> {
@@ -575,7 +837,8 @@ function buildRuleRisk(
   quote: QuoteSnapshot,
   technical: TechnicalSnapshot,
   news: Pick<NewsItem, "title" | "publishedAt" | "sentiment" | "impactScore" | "summary">[],
-  fx: FxSnapshot
+  fx: FxSnapshot,
+  fundamentals: FundamentalSnapshot
 ): RuleRisk {
   const reasons: string[] = [];
   let score = 0;
@@ -624,6 +887,27 @@ function buildRuleRisk(
     score += 1;
     reasons.push("影響度の高いネガティブニュースあり");
   }
+  if (!fundamentals.dataAvailable) {
+    score += 2;
+    reasons.push("BS/PL・企業価値データが未取得");
+  } else {
+    if ((fundamentals.profitMargins ?? 0) < 0) {
+      score += 1;
+      reasons.push("PL上の利益率がマイナス");
+    }
+    if ((fundamentals.currentRatio ?? 99) < 1) {
+      score += 1;
+      reasons.push("BS上の短期流動性に注意");
+    }
+    if ((fundamentals.debtToEquity ?? 0) >= 200) {
+      score += 1;
+      reasons.push("BS上の負債負担が重い");
+    }
+    if ((fundamentals.enterpriseToRevenue ?? 0) >= 20 && (fundamentals.profitMargins ?? 0) <= 0) {
+      score += 1;
+      reasons.push("赤字/低収益に対してEV/Salesが高い");
+    }
+  }
   if (input.currency === "USD" && !fx.ok) {
     score += 1;
     reasons.push("USD/JPYがリアルタイム取得できず入力値で代用");
@@ -666,6 +950,43 @@ function scenarioForecastOr(value: unknown, fallback: AiRiskComment["scenarioFor
     downsideInvalidation: stringOr(row.downsideInvalidation, fallback?.downsideInvalidation ?? ""),
     dangerLevel: stringOr(row.dangerLevel, fallback?.dangerLevel ?? "")
   };
+}
+
+function buildFallbackIrView(stock: Stock, realtime: Awaited<ReturnType<typeof buildRealtimeContext>>) {
+  if (realtime.fundamentals.filingView) {
+    const filingLinks = realtime.fundamentals.latestFilings?.slice(0, 3)
+      .map((filing) => `${filing.form} ${filing.filingDate}${filing.url ? ` ${filing.url}` : ""}`)
+      .join(" / ");
+    return `${stock.ticker}はSEC EDGARの10-K/10-Q/8-K提出履歴を優先確認しています。${realtime.fundamentals.filingView}${filingLinks ? ` 参照: ${filingLinks}` : ""}`;
+  }
+  if (!realtime.news.length) {
+    return `${stock.ticker}のIR/開示・ニュースは十分に取得できていません。開示未確認の状態では、短期ニュースやテクニカルより前に事業内容、決算短信、10-K/10-Q、有報の確認を優先します。`;
+  }
+  const latest = realtime.news[0];
+  const materialCount = realtime.news.filter((item) => item.impactScore >= 7).length;
+  return `${stock.ticker}のIR/開示確認は取得済み材料${realtime.news.length}件が前提です。直近材料は「${latest.title}」で、影響度7以上は${materialCount}件です。AIはこれをニュース反応としてではなく、BS/PLと企業価値の前提を変える材料かどうかから評価します。`;
+}
+
+function buildFallbackBusinessValueView(fundamentals: FundamentalSnapshot) {
+  if (!fundamentals.dataAvailable) {
+    return "企業価値評価に必要な時価総額、EV、収益性、BS主要指標が未取得です。この状態ではニュースや統計が良く見えても、企業価値の割安・割高判断は低信頼にします。";
+  }
+  if (fundamentals.source.includes("SEC EDGAR")) {
+    const profitability = fundamentals.profitMargins === null
+      ? "利益率未取得"
+      : fundamentals.profitMargins > 0
+        ? `純利益率${formatRatioPercent(fundamentals.profitMargins)}で利益は確認できます`
+        : `純利益率${formatRatioPercent(fundamentals.profitMargins)}で利益面は弱いです`;
+    const growth = fundamentals.revenueGrowth === null ? "成長率未取得" : `売上成長率${formatRatioPercent(fundamentals.revenueGrowth)}`;
+    return `SEC EDGARの10-K/10-Q XBRLでは、売上${formatCompactMoney(fundamentals.totalRevenue, fundamentals.financialCurrency)}、現金${formatCompactMoney(fundamentals.totalCash, fundamentals.financialCurrency)}、負債${formatCompactMoney(fundamentals.totalDebt, fundamentals.financialCurrency)}、${growth}、${profitability}です。時価総額/EV倍率はSEC単体では取れないため、株価データ側の市場価値と組み合わせて評価します。`;
+  }
+  const profitability = fundamentals.profitMargins === null
+    ? "利益率未取得"
+    : fundamentals.profitMargins > 0
+      ? `純利益率${formatRatioPercent(fundamentals.profitMargins)}で利益は確認できます`
+      : `純利益率${formatRatioPercent(fundamentals.profitMargins)}で利益面は弱いです`;
+  const growth = fundamentals.revenueGrowth === null ? "成長率未取得" : `売上成長率${formatRatioPercent(fundamentals.revenueGrowth)}`;
+  return `${fundamentals.valuationView} ${growth}、${profitability}。企業価値はニュース後の値動きではなく、収益規模、利益率、財務余力に対して時価総額/EVが妥当かを先に見ます。`;
 }
 
 function buildFallbackMarketView(realtime: Awaited<ReturnType<typeof buildRealtimeContext>>, ruleRisk: RuleRisk): NonNullable<AiRiskComment["marketView"]> {
@@ -889,6 +1210,20 @@ function usesDefaultTemperatureOnly(model: string) {
 
 function formatSignedPercent(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatRatioPercent(value: number) {
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+}
+
+function formatCompactMoney(value: number | null, currency: string) {
+  if (value === null || !Number.isFinite(value)) return "未取得";
+  const formatter = new Intl.NumberFormat("ja-JP", {
+    notation: "compact",
+    maximumFractionDigits: 2
+  });
+  const label = currency && currency !== "unknown" ? currency : "";
+  return `${formatter.format(value)}${label ? ` ${label}` : ""}`;
 }
 
 function formatYen(value: number) {

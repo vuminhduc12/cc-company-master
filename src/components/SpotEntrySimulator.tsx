@@ -26,6 +26,10 @@ type AiRiskComment = {
   dataFreshness?: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  irView?: string;
+  balanceSheetView?: string;
+  incomeStatementView?: string;
+  businessValueView?: string;
   marketView?: {
     scenario: "upside" | "range" | "downside";
     confidence: "低" | "中" | "高";
@@ -549,6 +553,16 @@ function AiCommentPanel({ comment, mode, runtime }: { comment: AiRiskComment; mo
       {comment.userQuestionAnswer ? (
         <InsightCard title="質問への回答" icon="Q" tone="info" className="mt-3">
           <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-200">{comment.userQuestionAnswer}</p>
+        </InsightCard>
+      ) : null}
+      {mode === "detailed" && (comment.irView || comment.balanceSheetView || comment.incomeStatementView || comment.businessValueView) ? (
+        <InsightCard title="IR / 財務 / 企業価値" icon="F" tone="info" className="mt-3">
+          <div className="mt-3 grid gap-2">
+            {comment.irView ? <ScenarioLine label="IR・開示" value={comment.irView} tone="info" icon="IR" /> : null}
+            {comment.balanceSheetView ? <ScenarioLine label="BS" value={comment.balanceSheetView} tone="good" icon="BS" /> : null}
+            {comment.incomeStatementView ? <ScenarioLine label="PL" value={comment.incomeStatementView} tone="macro" icon="PL" /> : null}
+            {comment.businessValueView ? <ScenarioLine label="企業価値" value={comment.businessValueView} tone="warn" icon="EV" /> : null}
+          </div>
         </InsightCard>
       ) : null}
       {comment.scenarioForecast ? (

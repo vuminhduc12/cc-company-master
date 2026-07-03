@@ -13,6 +13,10 @@ export type AiDiagnosisHistoryComment = {
   dataFreshness?: string;
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
+  irView?: string;
+  balanceSheetView?: string;
+  incomeStatementView?: string;
+  businessValueView?: string;
   marketView?: {
     scenario: "upside" | "range" | "downside";
     confidence: "低" | "中" | "高";
