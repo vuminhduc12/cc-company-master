@@ -20,9 +20,9 @@ const jstFormatter = new Intl.DateTimeFormat("ja-JP", {
 });
 const newsAnalysisCacheTtlMs = 24 * 60 * 60 * 1000;
 
-function canUseOpenAiForDailyJob(source: "cron" | "manual") {
+function canUseOpenAiForDailyJob(source: "cron" | "manual", manualUseOpenAi = false) {
   if (!process.env.OPENAI_API_KEY) return false;
-  if (source === "manual") return true;
+  if (source === "manual") return manualUseOpenAi;
   return process.env.ENABLE_DAILY_OPENAI === "true";
 }
 
@@ -38,9 +38,9 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   const authError = authorize(request, source);
   if (authError) return authError;
 
-  const canUseOpenAi = canUseOpenAiForDailyJob(source);
-
   try {
+    const manualRequest = source === "manual" ? await parseManualJobRequest(request) : { stocks: [] as Stock[], useOpenAi: false };
+    const canUseOpenAi = canUseOpenAiForDailyJob(source, manualRequest.useOpenAi);
     const aiUser = await resolveAiUserFromRequest(request);
     const aiUserId = aiUser.id;
     if (source === "manual" && aiLoginRequired(aiUserId)) {
@@ -52,7 +52,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     const userPlan = await getUserPlan(aiUserId, aiUser.email);
     const lastRun = nowJst();
     const nextRun = nextRunJst();
-    const manualStocks = source === "manual" ? await parseManualStocks(request) : [];
+    const manualStocks = manualRequest.stocks;
     const serverWatchlist = manualStocks.length ? null : await loadServerWatchlistItems();
     const targets = manualStocks.length
       ? manualStocks.map((stock) => ({
@@ -143,12 +143,12 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   }
 }
 
-async function parseManualStocks(request: NextRequest): Promise<Stock[]> {
-  const body = await request.json().catch(() => ({})) as { watchlist?: Stock[] };
-  if (!Array.isArray(body.watchlist)) return [];
+async function parseManualJobRequest(request: NextRequest): Promise<{ stocks: Stock[]; useOpenAi: boolean }> {
+  const body = await request.json().catch(() => ({})) as { watchlist?: Stock[]; useOpenAi?: boolean };
+  if (!Array.isArray(body.watchlist)) return { stocks: [], useOpenAi: body.useOpenAi === true };
 
   const seen = new Set<string>();
-  return body.watchlist.filter((stock): stock is Stock => {
+  const stocks = body.watchlist.filter((stock): stock is Stock => {
     if (!stock || typeof stock !== "object") return false;
     const ticker = String(stock.ticker ?? "").trim().toUpperCase();
     if (!ticker || seen.has(ticker) || !/^[A-Z0-9.-]{1,12}$/.test(ticker)) return false;
@@ -159,6 +159,7 @@ async function parseManualStocks(request: NextRequest): Promise<Stock[]> {
     stock.exchange = String(stock.exchange ?? "NASDAQ/NYSE");
     return true;
   }).slice(0, 20);
+  return { stocks, useOpenAi: body.useOpenAi === true };
 }
 
 function authorize(request: NextRequest, source: "cron" | "manual") {

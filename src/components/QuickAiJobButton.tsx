@@ -15,7 +15,7 @@ export function QuickAiJobButton() {
   const [status, setStatus] = useState<RunStatus>("idle");
   const [message, setMessage] = useState("");
 
-  async function run() {
+  async function run(useOpenAi: boolean) {
     const tickers = userWatchlist.items.map((i) => ({
       ticker: i.stock.ticker,
       companyName: i.stock.companyName,
@@ -29,7 +29,7 @@ export function QuickAiJobButton() {
     }
 
     setStatus("running");
-    setMessage(`${tickers.map((t) => t.ticker).join(", ")} を更新中…`);
+    setMessage(`${tickers.map((t) => t.ticker).join(", ")} を${useOpenAi ? "OpenAI分析込みで" : "無料API中心で"}更新中…`);
 
     try {
       const response = await fetch("/api/cron/daily-job", {
@@ -39,7 +39,7 @@ export function QuickAiJobButton() {
           ...await authHeaders(),
           ...(secret ? { "x-cron-secret": secret } : {}),
         },
-        body: JSON.stringify({ watchlist: tickers }),
+        body: JSON.stringify({ watchlist: tickers, useOpenAi }),
       });
       const result = await response.json() as AiJobResult;
       if (result.ok) {
@@ -73,13 +73,13 @@ export function QuickAiJobButton() {
         disabled={status === "running"}
         onClick={() => setOpen((v) => !v)}
         type="button"
-        title="AIジョブを手動実行"
+        title="OpenAIを使う手動AIジョブ"
       >
         <span className={status === "running" ? "animate-spin inline-block" : ""}>
           {status === "done" ? "✓" : "⚡"}
         </span>
         <span className="hidden sm:inline">
-          {status === "running" ? "実行中…" : status === "done" ? "完了" : "AI実行"}
+          {status === "running" ? "実行中…" : status === "done" ? "完了" : "手動AI"}
         </span>
       </button>
 
@@ -91,9 +91,9 @@ export function QuickAiJobButton() {
           <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-white/10 bg-slate-900 p-4 shadow-2xl shadow-black/60 ring-1 ring-white/5">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-sm font-black text-slate-50">⚡ AI Job 手動実行</p>
+                <p className="text-sm font-black text-slate-50">⚡ Manual AI Job</p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Watchlist全銘柄を今すぐ更新します。OpenAI/News APIキーはサーバー環境変数を使います。
+                  Watchlist全銘柄を今すぐ更新します。サーバーにOPENAI_API_KEYがある場合、この手動実行ではOpenAI分析を使います。
                 </p>
               </div>
               <button
@@ -105,6 +105,16 @@ export function QuickAiJobButton() {
             </div>
 
             <div className="mt-4 space-y-3">
+              <div className="grid gap-2">
+                <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-emerald-200">Free Auto Updates</p>
+                  <p className="mt-1 text-xs leading-5 text-emerald-50">毎朝の自動ジョブはOpenAIを使わず、株価・SEC EDGAR・IR系の無料更新を優先します。</p>
+                </div>
+                <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Manual OpenAI</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-50">このボタンの手動実行は、OPENAI_API_KEY設定済みならOpenAI料金の対象です。</p>
+                </div>
+              </div>
               {/* CRON_SECRET入力（本番用） */}
               <input
                 className="block w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-slate-50 placeholder-slate-600 outline-none focus:border-sky-300/50"
@@ -112,7 +122,7 @@ export function QuickAiJobButton() {
                 type="password"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void run(); }}
+                onKeyDown={(e) => { if (e.key === "Enter") void run(false); }}
               />
               <p className="text-[11px] leading-5 text-slate-500">
                 ここにOpenAI APIキーやNews APIキーを入れても更新されません。本番の手動実行を許可する合言葉だけを入力します。
@@ -120,13 +130,24 @@ export function QuickAiJobButton() {
               <div className="text-[11px] text-slate-500">
                 対象: {userWatchlist.items.map((i) => i.stock.ticker).join(", ") || "（銘柄なし）"}
               </div>
-              <button
-                className="w-full rounded-xl bg-sky-400 py-2.5 text-sm font-black text-slate-950 shadow-lg shadow-sky-950/30 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={status === "running" || userWatchlist.items.length === 0}
-                onClick={() => void run()}
-              >
-                {status === "running" ? "実行中…" : "今すぐ実行"}
-              </button>
+              <div className="grid gap-2">
+                <button
+                  className="w-full rounded-xl border border-emerald-300/30 bg-emerald-300/10 py-2.5 text-sm font-black text-emerald-100 transition hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={status === "running" || userWatchlist.items.length === 0}
+                  onClick={() => void run(false)}
+                  type="button"
+                >
+                  {status === "running" ? "実行中…" : "無料更新だけ実行"}
+                </button>
+                <button
+                  className="w-full rounded-xl bg-sky-400 py-2.5 text-sm font-black text-slate-950 shadow-lg shadow-sky-950/30 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={status === "running" || userWatchlist.items.length === 0}
+                  onClick={() => void run(true)}
+                  type="button"
+                >
+                  {status === "running" ? "実行中…" : "OpenAI分析も実行"}
+                </button>
+              </div>
             </div>
 
             {/* ステータスメッセージ */}

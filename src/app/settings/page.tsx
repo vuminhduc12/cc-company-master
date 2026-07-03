@@ -62,6 +62,25 @@ type AiUsageSummary = {
   }>;
 };
 
+type HealthStatus = {
+  config: {
+    openaiApiKey: boolean;
+    dailyOpenAiEnabled: boolean;
+    newsApiKey: boolean;
+    twelveDataKey: boolean;
+    cronSecret: boolean;
+  };
+  checks: {
+    hasRecentJob: boolean;
+    cronProtected: boolean;
+  };
+  latestJob: {
+    status: string | null;
+    ageHours: number | null;
+  } | null;
+  recommendations: string[];
+};
+
 export default function SettingsPage() {
   const userWatchlist = useUserWatchlist();
   const [cronSecret, setCronSecret] = useState("");
@@ -69,6 +88,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
   const [latestJobResult, setLatestJobResult] = useState<AiJobResult | null>(null);
   const [usageSummary, setUsageSummary] = useState<AiUsageSummary | null>(null);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings);
   const executionAudit = resolveAiJobAudit(latestJobResult);
   const newsSync = useNewsPreferencesSyncStatus();
@@ -99,6 +119,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void refreshAiUsageSummary();
+    void refreshHealthStatus();
   }, []);
 
   async function refreshAiUsageSummary() {
@@ -114,7 +135,17 @@ export default function SettingsPage() {
     }
   }
 
-  async function runAiJob() {
+  async function refreshHealthStatus() {
+    try {
+      const response = await fetch("/api/health", { cache: "no-store" });
+      const payload = await response.json() as { ok: true } & HealthStatus;
+      if (response.ok || payload.config) setHealthStatus(payload);
+    } catch {
+      setHealthStatus(null);
+    }
+  }
+
+  async function runAiJob(useOpenAi: boolean) {
     const targetStocks = parseManualJobStocks(appSettings.watchlistText, userWatchlist.items);
     if (targetStocks.length === 0) {
       setStatus("error");
@@ -123,7 +154,7 @@ export default function SettingsPage() {
     }
 
     setStatus("running");
-    setMessage(`AI社員が今日の仕事を実行中です。対象: ${targetStocks.map((stock) => stock.ticker).join(", ")}`);
+    setMessage(`${useOpenAi ? "OpenAI分析込み" : "無料API中心"}で更新中です。対象: ${targetStocks.map((stock) => stock.ticker).join(", ")}`);
     const previousStoredResult = localStorage.getItem(storageKey);
     const latest = prices[prices.length - 1];
     const now = new Date().toLocaleString("ja-JP");
@@ -152,7 +183,8 @@ export default function SettingsPage() {
           ...(cronSecret ? { "x-cron-secret": cronSecret } : {})
         },
         body: JSON.stringify({
-          watchlist: targetStocks
+          watchlist: targetStocks,
+          useOpenAi
         })
       });
       const result = await response.json() as AiJobResult;
@@ -188,6 +220,7 @@ export default function SettingsPage() {
         actions={(
           <>
             <HeaderPill label={usageSummary?.plan.name ?? "Free"} tone="blue" />
+            <HeaderPill label={healthStatus?.config.dailyOpenAiEnabled ? "朝AI ON" : "朝AI OFF"} tone={healthStatus?.config.dailyOpenAiEnabled ? "yellow" : "green"} />
             <HeaderPill label={`AI残り ${formatRemainingAiCalls(usageSummary)}`} tone={usageSummary?.plan.isUnlimited || (usageSummary?.remainingCalls ?? 1) > 0 ? "green" : "red"} />
             <HeaderPill label={status === "running" ? "Job Running" : latestJobResult?.status ?? "Job Pending"} tone={status === "error" ? "red" : status === "running" ? "yellow" : "default"} />
           </>
@@ -197,6 +230,15 @@ export default function SettingsPage() {
       <AuthPanel />
 
       <NewsSyncStatusPanel status={newsSync.status} onRefresh={() => void newsSync.refresh()} />
+
+      <CostControlPanel
+        health={healthStatus}
+        usageSummary={usageSummary}
+        onRefresh={() => {
+          void refreshHealthStatus();
+          void refreshAiUsageSummary();
+        }}
+      />
 
       <section className="rounded-2xl border border-fuchsia-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -309,8 +351,18 @@ export default function SettingsPage() {
       <section className="rounded-2xl border border-sky-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <h3 className="text-lg font-semibold text-slate-50">Manual AI Job</h3>
         <p className="mt-2 text-sm text-slate-400">
-          ローカル開発ではCRON_SECRET未設定でも実行できます。本番でCRON_SECRETを設定した場合は、手動実行時にも同じ値を入力してください。OpenAI/News APIキーはサーバー環境変数を使います。
+          手動実行はOpenAI分析の対象です。ローカル開発ではCRON_SECRET未設定でも実行できます。本番でCRON_SECRETを設定した場合は、手動実行時にも同じ値を入力してください。
         </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-3">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-200">無料自動更新</p>
+            <p className="mt-2 text-sm leading-6 text-emerald-50">毎朝の自動ジョブはOpenAIを使わず、株価・SEC EDGAR・IRニュース・ルール分析を更新します。</p>
+          </div>
+          <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-3">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-200">手動OpenAI分析</p>
+            <p className="mt-2 text-sm leading-6 text-amber-50">このManual AI Jobは、OPENAI_API_KEYが設定済みならOpenAI料金の対象です。</p>
+          </div>
+        </div>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
           <input
             className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-sky-300/50"
@@ -319,13 +371,24 @@ export default function SettingsPage() {
             value={cronSecret}
             onChange={(event) => setCronSecret(event.target.value)}
           />
-          <button
-            className="rounded-xl bg-sky-400 px-5 py-2 text-sm font-bold text-slate-950 shadow-lg shadow-sky-950/30 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={status === "running"}
-            onClick={runAiJob}
-          >
-            {status === "running" ? "実行中..." : "AI社員に今日の仕事をさせる"}
-          </button>
+          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1">
+            <button
+              className="rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-5 py-2 text-sm font-bold text-emerald-100 transition hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={status === "running"}
+              onClick={() => void runAiJob(false)}
+              type="button"
+            >
+              {status === "running" ? "実行中..." : "無料更新だけ実行"}
+            </button>
+            <button
+              className="rounded-xl bg-sky-400 px-5 py-2 text-sm font-bold text-slate-950 shadow-lg shadow-sky-950/30 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={status === "running"}
+              onClick={() => void runAiJob(true)}
+              type="button"
+            >
+              {status === "running" ? "実行中..." : "OpenAI分析も実行"}
+            </button>
+          </div>
         </div>
         {message ? (
           <p className={status === "error" ? "mt-4 rounded-2xl border border-red-300/25 bg-red-400/10 p-4 whitespace-pre-line text-sm leading-6 text-red-100" : message.includes("Warning:") ? "mt-4 rounded-2xl border border-yellow-300/25 bg-yellow-300/10 p-4 whitespace-pre-line text-sm leading-6 text-yellow-100" : "mt-4 rounded-2xl border border-green-300/25 bg-green-400/10 p-4 whitespace-pre-line text-sm leading-6 text-green-100"}>
@@ -433,6 +496,66 @@ function AuditMetric({ label, value, tone = "default" }: { label: string; value:
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className={`mt-2 break-words text-lg font-black ${color}`}>{value}</p>
     </div>
+  );
+}
+
+function CostControlPanel({ health, usageSummary, onRefresh }: { health: HealthStatus | null; usageSummary: AiUsageSummary | null; onRefresh: () => void }) {
+  const openAiConfigured = Boolean(health?.config.openaiApiKey);
+  const dailyOpenAiEnabled = Boolean(health?.config.dailyOpenAiEnabled);
+  const manualAiLabel = openAiConfigured ? "有効" : "未設定";
+  const dailyAiLabel = dailyOpenAiEnabled ? "有効" : "無効";
+
+  return (
+    <section className="rounded-2xl border border-sky-300/20 bg-slate-900/80 p-5 shadow-xl shadow-black/20 ring-1 ring-white/5">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-300">Cost Control</p>
+          <h3 className="mt-2 text-lg font-semibold text-slate-50">無料自動更新 / 手動OpenAIの分離</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            自動更新は無料APIとルール分析を優先します。OpenAIを使う処理は、Manual AI Jobまたは個別AI診断を手動実行した時だけです。
+          </p>
+        </div>
+        <button
+          className="w-fit rounded-xl border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-xs font-black text-sky-100 hover:bg-sky-300/15"
+          onClick={onRefresh}
+          type="button"
+        >
+          状態更新
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <AuditMetric label="毎朝OpenAI" value={dailyAiLabel} tone={dailyOpenAiEnabled ? "yellow" : "green"} />
+        <AuditMetric label="手動OpenAI" value={manualAiLabel} tone={openAiConfigured ? "yellow" : "blue"} />
+        <AuditMetric label="SEC / IR自動更新" value="無料API" tone="green" />
+        <AuditMetric label="今月推定OpenAI" value={`$${(usageSummary?.estimatedCostUsd ?? 0).toFixed(4)}`} tone={(usageSummary?.estimatedCostUsd ?? 0) > 0 ? "yellow" : "green"} />
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-200">無料で自動更新</p>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-emerald-50">
+            <li>・株価更新、SEC EDGAR、IRニュース監視</li>
+            <li>・毎朝ジョブのニュース判断はルールベース</li>
+            <li>・ENABLE_DAILY_OPENAI=true の時だけ毎朝OpenAIを使う</li>
+          </ul>
+        </div>
+        <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-200">手動でOpenAI使用</p>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-50">
+            <li>・Manual AI Job</li>
+            <li>・個別銘柄のAI診断、AIへの質問</li>
+            <li>・マクロAI分析は ai=1 を明示した時のみ</li>
+          </ul>
+        </div>
+      </div>
+
+      {health?.recommendations.length ? (
+        <p className="mt-4 rounded-xl border border-white/10 bg-slate-950/45 p-3 text-xs leading-5 text-slate-400">
+          {health.recommendations[0]}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
