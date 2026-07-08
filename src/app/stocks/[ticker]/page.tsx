@@ -341,6 +341,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           news={tickerNews}
           analysis={scoreAnalysis}
           sourceLabel={sourceLabel}
+          newsFeedSource={autoNewsFeed.source}
+          newsFeedFetchedAt={autoNewsFeed.fetchedAt}
+          newsFeedWarning={autoNewsFeed.warning}
         />
       </section>
 
