@@ -11,6 +11,7 @@ import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { PriceAlertPanel } from "@/components/PriceAlertPanel";
 import { SpotEntrySimulator } from "@/components/SpotEntrySimulator";
+import { ShortSellingPanel } from "@/components/ShortSellingPanel";
 import { StockDecisionPanel } from "@/components/StockDecisionPanel";
 import { StockChart } from "@/components/StockChart";
 import { mergeRealtimeDailyPrice, resolvePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
@@ -18,6 +19,7 @@ import { analyzePatternSimilarity, type PatternHorizon } from "@/lib/pattern-sim
 import { getPricesForTicker, news as localNews, watchlist } from "@/lib/mock-data";
 import { analyzeStock } from "@/lib/scoring";
 import { useCountUp } from "@/lib/use-count-up";
+import { useShortSellingData } from "@/lib/use-short-selling-data";
 import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
@@ -27,7 +29,7 @@ import { LiveWatchlistStrip } from "@/components/LiveWatchlistStrip";
 import type { DailyPrice, Stock, WatchlistItem } from "@/types";
 
 const emptyDailyPrices: DailyPrice[] = [];
-const decisionNavItems = [
+const baseDecisionNavItems = [
   { id: "conclusion", label: "結論" },
   { id: "upside", label: "上昇条件" },
   { id: "danger", label: "危険ライン" },
@@ -35,6 +37,8 @@ const decisionNavItems = [
   { id: "similar-patterns", label: "類似パターン" },
   { id: "simulation", label: "シミュレーション" }
 ] as const;
+
+type DecisionSectionId = typeof baseDecisionNavItems[number]["id"] | "short-selling";
 
 export default function StockDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = use(params);
@@ -47,13 +51,22 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     historyRevision: userWatchlist.historyRevision,
     seededHistory
   });
-  const [activeSection, setActiveSection] = useState<(typeof decisionNavItems)[number]["id"]>("conclusion");
+  const [activeSection, setActiveSection] = useState<DecisionSectionId>("conclusion");
   const [detailListId, setDetailListId] = useState("all");
 
   const customWatchItem = userWatchlist.items.find((row) => row.stock.ticker === normalizedTicker) ?? null;
   const watchItem = customWatchItem ?? watchlist.find((row) => row.stock.ticker === normalizedTicker) ?? null;
   const activeHistoryData = historyData?.stock.ticker === normalizedTicker ? historyData : null;
   const stock = watchItem?.stock ?? activeHistoryData?.stock ?? buildFallbackStock(normalizedTicker);
+  const isJapanStock = isJpyStock(stock);
+  const decisionNavItems = useMemo<Array<{ id: DecisionSectionId; label: string }>>(() => {
+    const items: Array<{ id: DecisionSectionId; label: string }> = [...baseDecisionNavItems];
+    if (isJapanStock) {
+      items.splice(3, 0, { id: "short-selling", label: "空売り公表" });
+    }
+    return items;
+  }, [isJapanStock]);
+  const shortSellingState = useShortSellingData(stock.ticker, isJapanStock);
   const localPrices = getPricesForTicker(stock.ticker);
   const live = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === stock.ticker);
   const livePrice = live?.price
@@ -152,7 +165,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
 
         if (visibleEntry?.target.id) {
-          setActiveSection(visibleEntry.target.id as (typeof decisionNavItems)[number]["id"]);
+          setActiveSection(visibleEntry.target.id as DecisionSectionId);
         }
       },
       {
@@ -289,7 +302,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         <InsightCard label="日次データ件数" value={`${mergedPrices.length}件`} tone="blue" />
       </section>
 
-      <DecisionSectionNav activeSection={activeSection} />
+      <DecisionSectionNav activeSection={activeSection} items={decisionNavItems} />
 
       <section id="conclusion" className="scroll-mt-24 rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.06] p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
         <SectionHeading title="結論" note="最初に見るべき投資判断の要約" />
@@ -358,6 +371,17 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           <ScoreBreakdown factors={scoreAnalysis.factors} score={scoreAnalysis.score} status={scoreAnalysis.status} />
         </div>
       </section>
+
+      {isJapanStock ? (
+        <section id="short-selling" className="scroll-mt-24 rounded-2xl border border-red-300/20 bg-red-300/[0.06] p-4 shadow-xl shadow-black/20 ring-1 ring-white/5 sm:p-5">
+          <SectionHeading title="空売り残高報告" note="JPX公表と同等。残高割合0.5%以上の空売り残高報告を表示します" />
+          <ShortSellingPanel
+            data={shortSellingState.data}
+            error={shortSellingState.error}
+            status={shortSellingState.status}
+          />
+        </section>
+      ) : null}
 
       <ProCtaBar
         title={`過去類似パターン分析（${patternSimilarity.sampleCount}件）`}
@@ -486,7 +510,13 @@ function HistoricalCsvButton({ prices, stock }: { prices: DailyPrice[]; stock: S
   );
 }
 
-function DecisionSectionNav({ activeSection }: { activeSection: (typeof decisionNavItems)[number]["id"] }) {
+function DecisionSectionNav({
+  activeSection,
+  items
+}: {
+  activeSection: DecisionSectionId;
+  items: Array<{ id: DecisionSectionId; label: string }>;
+}) {
   function handleClick(event: MouseEvent<HTMLAnchorElement>, id: string) {
     event.preventDefault();
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -495,7 +525,7 @@ function DecisionSectionNav({ activeSection }: { activeSection: (typeof decision
   return (
     <nav className="sticky top-0 z-10 -mx-4 overflow-x-auto border-b border-white/10 bg-[#020617]/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 [-webkit-overflow-scrolling:touch]">
       <div className="flex min-w-max gap-5">
-        {decisionNavItems.map(({ id, label }) => {
+        {items.map(({ id, label }) => {
           const active = id === activeSection;
           return (
             <a

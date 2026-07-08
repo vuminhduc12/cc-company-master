@@ -158,3 +158,19 @@ export type AiJobResult = {
   error?: string;
   warning?: string;
 };
+
+export type ShortSellingDisclosure = {
+  disclosedDate: string;
+  calculatedDate: string;
+  code: string;
+  reporterName: string;
+  reporterAddress: string;
+  delegateName: string;
+  fundName: string;
+  ratioPercent: number;
+  shares: number;
+  tradingUnits: number;
+  previousReportDate: string;
+  previousRatioPercent: number;
+  notes: string;
+};
