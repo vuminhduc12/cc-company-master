@@ -22,6 +22,8 @@ import { useCountUp } from "@/lib/use-count-up";
 import { useShortSellingData } from "@/lib/use-short-selling-data";
 import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { useAutoNewsFeed } from "@/lib/use-auto-news-feed";
+import { latestNewsDate, mergeNewsSources, newsForTicker, resolveNewsQualitySource } from "@/lib/news-feed";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
@@ -85,17 +87,20 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const displayChangePercent = realtimeQuote?.regular.changePercent ?? latest?.changePercent ?? 0;
   const latestPriceText = displayClose ? formatStockPrice(displayClose, stock) : "-";
   const regularPreviousClose = realtimeQuote?.regular.previousClose ?? mergedPrices[mergedPrices.length - 2]?.close ?? watchItem?.previousClose ?? null;
-  const tickerNews = live?.news?.length
-    ? live.news
-    : activeHistoryData?.news?.length
-      ? activeHistoryData.news
-      : localNews.filter((newsItem) => newsItem.ticker === stock.ticker);
+  const tickerNews = mergeNewsSources(
+    live?.news ?? [],
+    newsForTicker(autoNewsFeed.news, stock.ticker),
+    activeHistoryData?.news ?? [],
+    localNews.filter((newsItem) => newsItem.ticker === stock.ticker)
+  );
   const sourceLabel = realtimeQuote
     ? `${realtimeQuote.source} / live`
     : live
       ? resolvedPrices?.source ?? "AI Job"
       : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
   const detailItems = resolveVisibleWatchlist(userWatchlist.items);
+  const detailTickers = useMemo(() => detailItems.map((item) => item.stock.ticker), [detailItems]);
+  const autoNewsFeed = useAutoNewsFeed(detailTickers, stock.ticker);
   const detailListCounts = useMemo(() => countWatchlistLists(listManager.lists, detailItems), [detailItems, listManager.lists]);
   const marketFilteredDetailItems = useMemo(
     () => filterItemsByWatchlistList(detailItems, detailListId),
@@ -130,10 +135,16 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     },
     {
       label: "News",
-      source: live?.news?.length ? "AI Job analyzed news" : activeHistoryData?.news?.length ? "History API news" : "Local news",
-      asOf: latestNewsDate(tickerNews),
-      tone: tickerNews.length ? freshnessTone(latestNewsDate(tickerNews), 3 * 24 * 60, 7 * 24 * 60) : "fallback",
-      detail: `${tickerNews.length}件。ニュースが古い場合は材料判断を低信頼として扱います。`
+      source: resolveNewsQualitySource({
+        autoFeedSource: autoNewsFeed.source,
+        hasAiJobNews: Boolean(live?.news?.length),
+        hasHistoryNews: Boolean(activeHistoryData?.news?.length)
+      }),
+      asOf: autoNewsFeed.fetchedAt ?? latestNewsDate(tickerNews) ?? null,
+      tone: tickerNews.length
+        ? freshnessTone(autoNewsFeed.fetchedAt ?? latestNewsDate(tickerNews), 60, 24 * 60)
+        : "fallback",
+      detail: `${tickerNews.length}件。SEC/TDnet/NewsAPIを5分ごとに自動取得。AI Job未実行でも更新されます。`
     },
     {
       label: "AI Analysis",
@@ -148,7 +159,8 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     live?.warning ?? activeHistoryData?.warning ?? "",
     isWatchlistFallbackOnly ? `${stock.ticker}はWatchlist保存価格で暫定表示しています。` : "",
     resolvedPrices?.rejectedLive ? `API価格が検証済み履歴と大きく異なるため、${stock.ticker}はローカル履歴を優先表示しています。` : "",
-    priceValidation.issues[0]?.message ?? ""
+    priceValidation.issues[0]?.message ?? "",
+    autoNewsFeed.warning ? `News auto-feed: ${autoNewsFeed.warning}` : ""
   ];
 
   useEffect(() => {
@@ -293,7 +305,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         </div>
       ) : null}
 
-      <DataQualityPanel items={dataQualityItems} warnings={dataQualityWarnings} />
+      <DataQualityPanel title="データ鮮度" items={dataQualityItems} warnings={dataQualityWarnings} />
 
       <section className="grid gap-4 md:grid-cols-4">
         <InsightCard label="最新終値" value={latestPriceText} />
@@ -845,14 +857,6 @@ function MetricPill({ label, value, tone }: { label: string; value: string; tone
       <span className="text-[10px] font-normal opacity-70">{label} </span>{value}
     </span>
   );
-}
-
-function latestNewsDate(items: { publishedAt: string }[]) {
-  const dates = items
-    .map((item) => item.publishedAt)
-    .filter((value) => Number.isFinite(Date.parse(value)))
-    .sort((a, b) => Date.parse(b) - Date.parse(a));
-  return dates[0] ?? null;
 }
 
 function PatternCell({ pattern, score, high20Breakout }: { pattern: string; score: number; high20Breakout: string }) {

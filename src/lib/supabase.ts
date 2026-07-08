@@ -121,6 +121,39 @@ export async function loadRecentSavedNewsForTickers(tickers: string[], limit = 4
   }).filter((item) => item.ticker);
 }
 
+export async function loadNewsCacheMeta(tickers: string[]) {
+  const supabase = createServerSupabase();
+  if (!supabase) return { latestFetchedAt: null as string | null, count: 0 };
+
+  const normalizedTickers = [...new Set(tickers.map((ticker) => ticker.trim().toUpperCase()).filter(Boolean))];
+  if (!normalizedTickers.length) return { latestFetchedAt: null, count: 0 };
+
+  const { data: stocks, error: stockError } = await supabase
+    .from("stocks")
+    .select("id,ticker")
+    .in("ticker", normalizedTickers);
+  if (stockError || !stocks?.length) return { latestFetchedAt: null, count: 0 };
+
+  const stockIds = (stocks as Array<{ id: string }>).map((stock) => stock.id);
+  const { data, error, count } = await supabase
+    .from("news")
+    .select("created_at,published_at", { count: "exact" })
+    .in("stock_id", stockIds)
+    .in("source", ["SEC EDGAR", "TDnet"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error || !data?.length) {
+    return { latestFetchedAt: null, count: count ?? 0 };
+  }
+
+  const row = data[0] as { created_at?: string | null; published_at?: string | null };
+  return {
+    latestFetchedAt: row.created_at ?? row.published_at ?? null,
+    count: count ?? 0
+  };
+}
+
 export async function saveNewsItems(items: NewsItem[]) {
   const supabase = createServerSupabase();
   if (!supabase) return { saved: false, reason: "Supabase env is not configured." };

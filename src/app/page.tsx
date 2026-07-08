@@ -29,6 +29,8 @@ import { useCountUp } from "@/lib/use-count-up";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { watchStatusLabel } from "@/lib/status-labels";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
+import { useAutoNewsFeed } from "@/lib/use-auto-news-feed";
+import { latestNewsDate, mergeNewsSources, newsForTicker, resolveNewsQualitySource } from "@/lib/news-feed";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import type { AiStockExecutionAudit, DailyPrice, NewsItem, Stock, WatchStatus, WatchlistItem } from "@/types";
@@ -109,6 +111,8 @@ export default function DashboardPage() {
   // AIジョブの「主役」銘柄（旧実装ではRGTI固定だった部分を汎用化）
   const jobPrimaryTicker = jobResult?.stocks?.[0]?.stock.ticker;
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
+  const dashboardTickers = useMemo(() => dashboardWatchlist.map((item) => item.stock.ticker), [dashboardWatchlist]);
+  const autoNewsFeed = useAutoNewsFeed(dashboardTickers, selectedItem.stock.ticker);
   const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
   const selectedLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === selectedItem.stock.ticker);
   const cachedHistory = userWatchlist.getTickerHistory(selectedItem.stock.ticker);
@@ -124,11 +128,12 @@ export default function DashboardPage() {
   const priceValidation = validateDailyPriceSeries(rawChartPrices, selectedItem.stock.ticker);
   const chartPrices = priceValidation.prices.length ? priceValidation.prices : rawChartPrices;
   const latest = chartPrices[chartPrices.length - 1] ?? baseLatest;
-  const selectedNews = selectedLive?.news?.length
-    ? selectedLive.news
-    : activeHistoryData?.news?.length
-      ? activeHistoryData.news
-      : news.filter((item) => item.ticker === selectedItem.stock.ticker);
+  const selectedNews = mergeNewsSources(
+    selectedLive?.news ?? [],
+    newsForTicker(autoNewsFeed.news, selectedItem.stock.ticker),
+    activeHistoryData?.news ?? [],
+    news.filter((item) => item.ticker === selectedItem.stock.ticker)
+  );
   const liveNews = selectedNews.length > 0 ? selectedNews : news;
   const scoreAnalysis = analyzeStock(latest, liveNews);
   const score = selectedLive?.aiMarketScore ?? (selectedItem.stock.ticker === jobPrimaryTicker && jobResult ? jobResult.aiMarketScore : scoreAnalysis.score);
@@ -169,10 +174,16 @@ export default function DashboardPage() {
     },
     {
       label: "News",
-      source: selectedLive?.news?.length ? "AI Job analyzed news" : activeHistoryData?.news?.length ? "History API news" : "Local news",
-      asOf: latestNewsDate(selectedNews),
-      tone: selectedNews.length ? freshnessTone(latestNewsDate(selectedNews), 3 * 24 * 60, 7 * 24 * 60) : "fallback",
-      detail: `${selectedNews.length}件。ニュース不足時は材料判断の信頼度を下げて見てください。`
+      source: resolveNewsQualitySource({
+        autoFeedSource: autoNewsFeed.source,
+        hasAiJobNews: Boolean(selectedLive?.news?.length),
+        hasHistoryNews: Boolean(activeHistoryData?.news?.length)
+      }),
+      asOf: autoNewsFeed.fetchedAt ?? latestNewsDate(selectedNews) ?? null,
+      tone: selectedNews.length
+        ? freshnessTone(autoNewsFeed.fetchedAt ?? latestNewsDate(selectedNews), 60, 24 * 60)
+        : "fallback",
+      detail: `${selectedNews.length}件。SEC/TDnet/NewsAPIを5分ごとに自動取得。AI Job未実行でも更新されます。`
     },
     {
       label: "AI Analysis",
@@ -189,7 +200,8 @@ export default function DashboardPage() {
     resolvedPrices.rejectedLive ? `API価格が検証済み履歴と大きく異なるため、${selectedItem.stock.ticker}はローカル履歴を優先表示しています。` : "",
     activeHistoryData?.warning ? `History: ${activeHistoryData.warning}` : "",
     historyStatus === "error" && !pricesByTicker[selectedItem.stock.ticker] && !selectedLive?.prices?.length ? `History: ${selectedItem.stock.ticker}の日足履歴を取得できなかったため、Watchlist保存価格で暫定表示しています。${historyError}` : "",
-    priceValidation.issues[0]?.message ?? ""
+    priceValidation.issues[0]?.message ?? "",
+    autoNewsFeed.warning ? `News auto-feed: ${autoNewsFeed.warning}` : ""
   ];
 
   function changeDashboardList(nextListId: string) {
@@ -461,7 +473,7 @@ export default function DashboardPage() {
         <span className="text-emerald-100/75">。Alpha Vantageは明示的に有効化した時だけ最後の補助として使用します。</span>
       </section>
 
-      <DataQualityPanel items={dataQualityItems} warnings={dataQualityWarnings} />
+      <DataQualityPanel title="データ鮮度" items={dataQualityItems} warnings={dataQualityWarnings} />
 
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/45 shadow-xl shadow-black/20 ring-1 ring-white/5">
         <button
@@ -954,14 +966,6 @@ function formatDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
-}
-
-function latestNewsDate(items: NewsItem[]) {
-  const dates = items
-    .map((item) => item.publishedAt)
-    .filter((value) => Number.isFinite(Date.parse(value)))
-    .sort((a, b) => Date.parse(b) - Date.parse(a));
-  return dates[0] ?? null;
 }
 
 function Metric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "green" | "red" | "yellow" | "blue" }) {

@@ -11,7 +11,9 @@ import { countStaleNews, filterFreshNews, freshNewsWindowDays } from "@/lib/news
 import { newsPreferencesChangedEvent, readNewsPreferenceKeys } from "@/lib/news-preferences";
 import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
+import { uniqueNewsItems } from "@/lib/news-feed";
 import { hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
+import { useAutoNewsFeed } from "@/lib/use-auto-news-feed";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import type { NewsItem, WatchlistItem } from "@/types";
 
@@ -29,11 +31,12 @@ function NewsPageContent() {
   const listManager = useWatchlistLists();
   const userWatchlist = useUserWatchlist();
   const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
-  const [irNews, setIrNews] = useState<NewsItem[]>([]);
+  const visibleTickers = useMemo(() => visibleWatchlist.map((item) => item.stock.ticker), [visibleWatchlist]);
+  const autoNewsFeed = useAutoNewsFeed(visibleTickers);
+  const irNews = autoNewsFeed.news;
   const [newsListId, setNewsListId] = useState("all");
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());
   const highlightedTicker = searchParams.get("highlight")?.toUpperCase();
-  const visibleTickerKey = visibleWatchlist.map((item) => item.stock.ticker).filter(Boolean).join(",");
   const allVisibleItems = sortNewsByPublishedAt(uniqueNewsItems([...(jobResult?.news ?? news), ...irNews]).filter((item) => !hiddenNews.has(newsIdentity(item))));
   const staleCount = countStaleNews(allVisibleItems);
   const freshItems = filterFreshNews(allVisibleItems);
@@ -85,32 +88,6 @@ function NewsPageContent() {
     window.addEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
     return () => window.removeEventListener(newsPreferencesChangedEvent, handlePreferencesChanged);
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadIrNews() {
-      const tickers = visibleTickerKey.split(",").filter(Boolean);
-      if (!tickers.length) {
-        setIrNews([]);
-        return;
-      }
-      try {
-        const response = await fetch(`/api/news/ir/latest?tickers=${encodeURIComponent(tickers.join(","))}`, {
-          cache: "no-store"
-        });
-        const payload = await response.json() as { ok: true; news: NewsItem[] } | { ok: false };
-        if (!cancelled && response.ok && payload.ok) setIrNews(payload.news);
-      } catch {
-        if (!cancelled) setIrNews([]);
-      }
-    }
-    void loadIrNews();
-    const timer = window.setInterval(loadIrNews, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [visibleTickerKey]);
 
   return (
     <div className="space-y-6">
@@ -263,16 +240,6 @@ function newsKey(item: { publishedAt: string; ticker: string; title: string; url
 
 function sortNewsByPublishedAt(items: NewsItem[]) {
   return items.slice().sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-}
-
-function uniqueNewsItems(items: NewsItem[]) {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = newsIdentity(item);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 function buildTickerTabs(items: typeof news, visibleWatchlist: WatchlistItem[]) {

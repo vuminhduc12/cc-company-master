@@ -149,7 +149,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return;
       }
       try {
-        const response = await fetch(`/api/news/ir/latest?tickers=${encodeURIComponent(tickers.join(","))}`, {
+        const response = await fetch(`/api/news/feed?tickers=${encodeURIComponent(tickers.join(","))}`, {
           cache: "no-store"
         });
         const payload = await response.json() as { ok: true; news: NewsItem[] } | { ok: false };

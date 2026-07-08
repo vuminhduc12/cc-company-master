@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { analyzePatternSimilarity, type PatternSimilarityResult } from "@/lib/pattern-similarity";
 import type { DailyPrice, NewsItem, Stock, StockScoreAnalysis } from "@/types";
 
@@ -48,6 +48,20 @@ export function StockDecisionPanel({ stock, prices, news, analysis, sourceLabel 
   const patternSimilarity = useMemo(() => analyzePatternSimilarity(prices), [prices]);
   const trendLabel = buildTrendLabel(latest);
   const posture = buildPosture(latest, supportLine, resistanceLine, analysis.score, negativeNews);
+
+  useEffect(() => {
+    if (!news.length) return;
+    setCurrentNews(news);
+    setNewsSource(news[0]?.source ?? "自動取得");
+    setNewsFetchedAt((current) => {
+      if (current) return current;
+      const latestPublished = news
+        .map((item) => item.publishedAt)
+        .filter((value) => Number.isFinite(Date.parse(value)))
+        .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+      return latestPublished ?? "";
+    });
+  }, [news]);
   const levels: Level[] = [
     { label: "短期レンジ下限", value: low20, detail: "直近20日安値。短期の押し目候補として監視。", tone: "support" },
     { label: "短期レンジ上限", value: high20, detail: "直近20日高値。上抜け確認ライン。", tone: "resistance" },
