@@ -87,6 +87,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const displayChangePercent = realtimeQuote?.regular.changePercent ?? latest?.changePercent ?? 0;
   const latestPriceText = displayClose ? formatStockPrice(displayClose, stock) : "-";
   const regularPreviousClose = realtimeQuote?.regular.previousClose ?? mergedPrices[mergedPrices.length - 2]?.close ?? watchItem?.previousClose ?? null;
+  const detailItems = resolveVisibleWatchlist(userWatchlist.items);
+  const detailTickers = useMemo(() => detailItems.map((item) => item.stock.ticker), [detailItems]);
+  const autoNewsFeed = useAutoNewsFeed(detailTickers, stock.ticker);
   const tickerNews = mergeNewsSources(
     live?.news ?? [],
     newsForTicker(autoNewsFeed.news, stock.ticker),
@@ -98,9 +101,6 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
     : live
       ? resolvedPrices?.source ?? "AI Job"
       : activeHistoryData?.sourceLabel ?? (localPrices ? "Local verified history" : "Loading");
-  const detailItems = resolveVisibleWatchlist(userWatchlist.items);
-  const detailTickers = useMemo(() => detailItems.map((item) => item.stock.ticker), [detailItems]);
-  const autoNewsFeed = useAutoNewsFeed(detailTickers, stock.ticker);
   const detailListCounts = useMemo(() => countWatchlistLists(listManager.lists, detailItems), [detailItems, listManager.lists]);
   const marketFilteredDetailItems = useMemo(
     () => filterItemsByWatchlistList(detailItems, detailListId),
