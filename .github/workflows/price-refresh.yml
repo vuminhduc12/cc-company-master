@@ -15,7 +15,12 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           if [ -z "$PRICE_REFRESH_URL" ]; then
-            echo "PRICE_REFRESH_URL secret is required."
+            echo "PRICE_REFRESH_URL secret is not set. Skipping optional price refresh."
+            exit 0
+          fi
+
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is required when PRICE_REFRESH_URL is set."
             exit 1
           fi
 
