@@ -109,7 +109,6 @@ export async function loadRecentSavedNewsForTickers(tickers: string[], limit = 4
     .from("news")
     .select("*")
     .in("stock_id", stockRows.map((stock) => stock.id))
-    .in("source", ["SEC EDGAR", "TDnet"])
     .order("published_at", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -139,7 +138,6 @@ export async function loadNewsCacheMeta(tickers: string[]) {
     .from("news")
     .select("created_at,published_at", { count: "exact" })
     .in("stock_id", stockIds)
-    .in("source", ["SEC EDGAR", "TDnet"])
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -152,6 +150,45 @@ export async function loadNewsCacheMeta(tickers: string[]) {
     latestFetchedAt: row.created_at ?? row.published_at ?? null,
     count: count ?? 0
   };
+}
+
+const newsFeedRunKey = "ir-news";
+
+export async function loadNewsFeedRunMeta() {
+  const supabase = createServerSupabase();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("news_feed_runs")
+    .select("ran_at,found,scanned,failed")
+    .eq("run_key", newsFeedRunKey)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const row = data as { ran_at?: string | null; found?: number | null; scanned?: number | null; failed?: number | null };
+  return {
+    ranAt: row.ran_at ?? null,
+    found: row.found ?? 0,
+    scanned: row.scanned ?? 0,
+    failed: row.failed ?? 0
+  };
+}
+
+export async function saveNewsFeedRunMeta(meta: { ranAt: string; found: number; scanned: number; failed?: number }) {
+  const supabase = createServerSupabase();
+  if (!supabase) return { saved: false, reason: "Supabase env is not configured." };
+
+  const { error } = await supabase.from("news_feed_runs").upsert({
+    run_key: newsFeedRunKey,
+    ran_at: meta.ranAt,
+    found: meta.found,
+    scanned: meta.scanned,
+    failed: meta.failed ?? 0,
+    updated_at: meta.ranAt
+  }, { onConflict: "run_key" });
+
+  if (error) return { saved: false, reason: error.message };
+  return { saved: true };
 }
 
 export async function saveNewsItems(items: NewsItem[]) {

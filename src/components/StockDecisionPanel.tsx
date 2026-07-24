@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { NEWS_FEED_POLL_MS } from "@/lib/news-feed";
+import type { NewsFeedStatus } from "@/lib/news-feed-context";
 import { analyzePatternSimilarity, type PatternSimilarityResult } from "@/lib/pattern-similarity";
 import type { DailyPrice, NewsItem, Stock, StockScoreAnalysis } from "@/types";
 
@@ -14,6 +15,7 @@ type Props = {
   newsFeedSource?: string;
   newsFeedFetchedAt?: string | null;
   newsFeedWarning?: string;
+  newsFeedStatus?: NewsFeedStatus;
 };
 
 type Level = {
@@ -31,7 +33,8 @@ export function StockDecisionPanel({
   sourceLabel,
   newsFeedSource,
   newsFeedFetchedAt,
-  newsFeedWarning = ""
+  newsFeedWarning = "",
+  newsFeedStatus = "ready"
 }: Props) {
   const currentNews = news;
   const newsSource = newsFeedSource ?? (news.length ? news[0].source : "未取得");
@@ -140,6 +143,7 @@ export function StockDecisionPanel({
             newsFreshness={newsFreshness}
             newsCount={currentNews.length}
             newsWarning={newsFeedWarning}
+            newsFeedStatus={newsFeedStatus}
           />
           <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
             <p className="text-sm font-bold text-slate-100">出来高急増日</p>
@@ -220,7 +224,8 @@ function DataFreshnessPanel({
   newsSource,
   newsFreshness,
   newsCount,
-  newsWarning
+  newsWarning,
+  newsFeedStatus
 }: {
   priceSource: string;
   priceFreshness: Freshness;
@@ -228,8 +233,10 @@ function DataFreshnessPanel({
   newsFreshness: Freshness;
   newsCount: number;
   newsWarning: string;
+  newsFeedStatus: NewsFeedStatus;
 }) {
   const autoUpdateMinutes = Math.round(NEWS_FEED_POLL_MS / 60000);
+  const statusBadge = resolveFeedStatusBadge(newsFeedStatus);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
@@ -237,11 +244,11 @@ function DataFreshnessPanel({
         <div>
           <p className="text-sm font-bold text-slate-100">データ鮮度</p>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            価格・ニュースの取得元と鮮度を確認します。ニュースは{autoUpdateMinutes}分ごとに自動更新されます。
+            価格・ニュースの取得元と鮮度を確認します。ニュースは{autoUpdateMinutes}分ごとに自動読み取りされます。
           </p>
         </div>
-        <span className="inline-flex h-10 items-center rounded-xl border border-emerald-300/25 bg-emerald-300/10 px-3 text-xs font-black text-emerald-100">
-          自動更新中
+        <span className={`inline-flex h-10 items-center rounded-xl border px-3 text-xs font-black ${statusBadge.className}`}>
+          {statusBadge.label}
         </span>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -255,6 +262,31 @@ function DataFreshnessPanel({
       ) : null}
     </div>
   );
+}
+
+function resolveFeedStatusBadge(status: NewsFeedStatus) {
+  if (status === "loading") {
+    return {
+      label: "更新中...",
+      className: "border-sky-300/25 bg-sky-300/10 text-sky-100"
+    };
+  }
+  if (status === "error") {
+    return {
+      label: "取得失敗",
+      className: "border-red-300/25 bg-red-300/10 text-red-100"
+    };
+  }
+  if (status === "idle") {
+    return {
+      label: "待機中",
+      className: "border-white/15 bg-white/5 text-slate-300"
+    };
+  }
+  return {
+    label: "自動更新中",
+    className: "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+  };
 }
 
 type Freshness = {

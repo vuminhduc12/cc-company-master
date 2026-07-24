@@ -13,7 +13,7 @@ import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { uniqueNewsItems } from "@/lib/news-feed";
 import { hideNewsItem, newsIdentity, useAiJobResult } from "@/lib/use-ai-job-result";
-import { useAutoNewsFeed } from "@/lib/use-auto-news-feed";
+import { useNewsFeed } from "@/lib/news-feed-context";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import type { NewsItem, WatchlistItem } from "@/types";
 
@@ -31,8 +31,7 @@ function NewsPageContent() {
   const listManager = useWatchlistLists();
   const userWatchlist = useUserWatchlist();
   const visibleWatchlist = resolveVisibleWatchlist(userWatchlist.items);
-  const visibleTickers = useMemo(() => visibleWatchlist.map((item) => item.stock.ticker), [visibleWatchlist]);
-  const autoNewsFeed = useAutoNewsFeed(visibleTickers);
+  const autoNewsFeed = useNewsFeed();
   const irNews = autoNewsFeed.news;
   const [newsListId, setNewsListId] = useState("all");
   const [hiddenNews, setHiddenNews] = useState<Set<string>>(() => readHiddenNewsKeys());

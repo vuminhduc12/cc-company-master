@@ -13,7 +13,7 @@ import type { PlanDefinition } from "@/lib/plans";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
 import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import { useUserWatchlist } from "@/lib/user-watchlist";
-import type { NewsItem } from "@/types";
+import { useNewsFeed } from "@/lib/news-feed-context";
 
 function buildNavLinks(detailTicker: string) {
   return [
@@ -70,8 +70,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [aiDataAge, setAiDataAge] = useState("");
   const [aiDataSourceLabel, setAiDataSourceLabel] = useState("");
   const [planLabel, setPlanLabel] = useState("Free プラン");
-  const [irNews, setIrNews] = useState<NewsItem[]>([]);
-  const watchlistTickerKey = userWatchlist.items.map((item) => item.stock.ticker).filter(Boolean).join(",");
+  const newsFeed = useNewsFeed();
+  const irNews = newsFeed.news;
   const aiStatus = resolveAiStatus(jobResult?.status);
   useNewsPreferencesSync();
 
@@ -139,32 +139,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, [auth.loading, auth.user?.id, auth.email]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadIrNews() {
-      const tickers = watchlistTickerKey.split(",").filter(Boolean);
-      if (!tickers.length) {
-        setIrNews([]);
-        return;
-      }
-      try {
-        const response = await fetch(`/api/news/feed?tickers=${encodeURIComponent(tickers.join(","))}`, {
-          cache: "no-store"
-        });
-        const payload = await response.json() as { ok: true; news: NewsItem[] } | { ok: false };
-        if (!cancelled && response.ok && payload.ok) setIrNews(payload.news);
-      } catch {
-        if (!cancelled) setIrNews([]);
-      }
-    }
-    void loadIrNews();
-    const timer = window.setInterval(loadIrNews, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [watchlistTickerKey]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-slate-50">

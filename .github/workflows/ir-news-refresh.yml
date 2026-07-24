@@ -1,0 +1,30 @@
+name: IR News Refresh
+
+on:
+  schedule:
+    # Every 6 hours — Vercel Hobby only allows once/day cron, so GHA drives freshness.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call IR news cron endpoint
+        env:
+          IR_NEWS_URL: ${{ secrets.IR_NEWS_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$IR_NEWS_URL" ]; then
+            echo "IR_NEWS_URL secret is not set. Skipping optional IR news refresh."
+            exit 0
+          fi
+
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is required when IR_NEWS_URL is set."
+            exit 1
+          fi
+
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "$IR_NEWS_URL"

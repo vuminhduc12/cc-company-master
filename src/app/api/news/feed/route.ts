@@ -1,95 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scanIrNewsForWatchlist } from "@/lib/ir-news";
-import { fetchNewsFromNewsApi } from "@/lib/news-api";
-import {
-  buildNewsFeedSource,
-  isNewsCacheStale,
-  mergeNewsSources,
-  minimalWatchlistItems,
-  NEWS_FEED_STALE_MS,
-  uniqueNewsItems
-} from "@/lib/news-feed";
-import { loadNewsCacheMeta, loadRecentSavedNewsForTickers, saveNewsItems } from "@/lib/supabase";
-import type { NewsItem } from "@/types";
+import { buildNewsFeedSource, uniqueNewsItems } from "@/lib/news-feed";
+import { loadNewsCacheMeta, loadNewsFeedRunMeta, loadRecentSavedNewsForTickers } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
 
+/**
+ * Read-only news feed for the UI.
+ * Heavy SEC/TDnet/NewsAPI ingestion belongs to /api/cron/ir-news only.
+ */
 export async function GET(request: NextRequest) {
   const tickers = (request.nextUrl.searchParams.get("tickers") ?? "")
     .split(",")
     .map((ticker) => ticker.trim().toUpperCase())
     .filter(Boolean)
     .slice(0, 100);
-  const focus = (request.nextUrl.searchParams.get("focus") ?? "").trim().toUpperCase();
-  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
 
   if (!tickers.length) {
-    return NextResponse.json({ ok: true, news: [], source: "未取得", fetchedAt: new Date().toISOString(), mode: "cached" as const });
+    return NextResponse.json({
+      ok: true,
+      news: [],
+      source: "未取得",
+      fetchedAt: new Date().toISOString(),
+      mode: "cached" as const
+    });
   }
 
   try {
-    let news = await loadRecentSavedNewsForTickers(tickers, 80);
-    const cacheMeta = await loadNewsCacheMeta(tickers);
-    let fetchedAt = cacheMeta.latestFetchedAt ?? new Date().toISOString();
-    let mode: "cached" | "live-scan" = "cached";
-    const warnings: string[] = [];
+    const [news, cacheMeta, runMeta] = await Promise.all([
+      loadRecentSavedNewsForTickers(tickers, 80),
+      loadNewsCacheMeta(tickers),
+      loadNewsFeedRunMeta()
+    ]);
+
     const sources = new Set<string>();
-
-    if (news.length) sources.add("SEC EDGAR / TDnet");
-
-    const shouldScan = forceRefresh || isNewsCacheStale(cacheMeta.latestFetchedAt, NEWS_FEED_STALE_MS) || !news.length;
-    if (shouldScan) {
-      const scanResult = await scanIrNewsForWatchlist(minimalWatchlistItems(tickers));
-      if (scanResult.news.length) {
-        const saveResult = await saveNewsItems(scanResult.news);
-        if (saveResult.reason) warnings.push(saveResult.reason);
-        news = await loadRecentSavedNewsForTickers(tickers, 80);
-        fetchedAt = new Date().toISOString();
-        mode = "live-scan";
-        sources.add("SEC EDGAR / TDnet");
-      } else if (scanResult.errors.length) {
-        warnings.push(...scanResult.errors.slice(0, 2));
-      }
+    for (const item of news) {
+      if (item.source === "SEC EDGAR" || item.source === "TDnet") sources.add("SEC EDGAR / TDnet");
+      else if (item.source === "NewsAPI" || item.source?.includes("NewsAPI")) sources.add("NewsAPI");
+      else if (item.source) sources.add(item.source);
     }
 
-    const focusTicker = focus && tickers.includes(focus) ? focus : tickers[0];
-    const focusNews = news.filter((item) => item.ticker.toUpperCase() === focusTicker);
-    const shouldFetchNewsApi = focusTicker && !focusTicker.endsWith(".T") && focusNews.length < 3;
-    let supplementalNews: NewsItem[] = [];
+    const fetchedAt = runMeta?.ranAt ?? cacheMeta.latestFetchedAt ?? new Date().toISOString();
+    const warning = !news.length
+      ? "保存済みニュースがありません。cron の IR ニュース取得後に更新されます。"
+      : undefined;
 
-    if (shouldFetchNewsApi) {
-      try {
-        const newsApiResult = await fetchNewsFromNewsApi({
-          ticker: focusTicker,
-          companyName: focusTicker,
-          exchange: "NASDAQ",
-          sector: ""
-        });
-        supplementalNews = newsApiResult.news;
-        if (newsApiResult.warning) warnings.push(newsApiResult.warning);
-        if (newsApiResult.news.length) {
-          sources.add(newsApiResult.source);
-          if (newsApiResult.mode === "live") {
-            fetchedAt = newsApiResult.fetchedAt;
-            mode = "live-scan";
-          }
-        }
-      } catch (error) {
-        warnings.push(error instanceof Error ? error.message : "NewsAPI fetch failed");
-      }
-    }
-
-    const mergedNews = uniqueNewsItems(mergeNewsSources(news, supplementalNews));
     return NextResponse.json({
       ok: true,
-      news: mergedNews,
+      news: uniqueNewsItems(news),
       source: buildNewsFeedSource([...sources]),
       fetchedAt,
-      mode,
-      scanned: shouldScan,
+      mode: "cached" as const,
       cacheCount: cacheMeta.count,
-      warning: warnings.length ? warnings.join(" ") : undefined
+      lastCronAt: runMeta?.ranAt ?? null,
+      warning
     });
   } catch (error) {
     return NextResponse.json(

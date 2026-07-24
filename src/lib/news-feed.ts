@@ -2,7 +2,33 @@ import { newsIdentity } from "@/lib/use-ai-job-result";
 import type { NewsItem, WatchStatus, WatchlistItem } from "@/types";
 
 export const NEWS_FEED_POLL_MS = 5 * 60 * 1000;
-export const NEWS_FEED_STALE_MS = 30 * 60 * 1000;
+export const NEWS_FEED_STALE_MS = 6 * 60 * 60 * 1000;
+export const NEWS_API_CRON_LIMIT = 10;
+
+/** Prefer newer publishedAt when identity collides; earlier layers win ties. */
+export function mergeNewsSources(...layers: NewsItem[][]) {
+  const byKey = new Map<string, NewsItem>();
+  for (const layer of layers) {
+    for (const item of layer) {
+      const key = newsIdentity(item);
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, item);
+        continue;
+      }
+      const nextTime = Date.parse(item.publishedAt);
+      const prevTime = Date.parse(existing.publishedAt);
+      if (Number.isFinite(nextTime) && Number.isFinite(prevTime) && nextTime > prevTime) {
+        byKey.set(key, item);
+      }
+    }
+  }
+  return [...byKey.values()].sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt));
+}
+
+export function uniqueNewsItems(items: NewsItem[]) {
+  return mergeNewsSources(items);
+}
 
 export function latestNewsDate(items: { publishedAt: string }[]) {
   return items.reduce((latest, item) => {
@@ -10,30 +36,6 @@ export function latestNewsDate(items: { publishedAt: string }[]) {
     if (!latest) return item.publishedAt;
     return Date.parse(item.publishedAt) > Date.parse(latest) ? item.publishedAt : latest;
   }, "");
-}
-
-export function uniqueNewsItems(items: NewsItem[]) {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = newsIdentity(item);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-export function mergeNewsSources(...layers: NewsItem[][]) {
-  const seen = new Set<string>();
-  const merged: NewsItem[] = [];
-  for (const layer of layers) {
-    for (const item of layer) {
-      const key = newsIdentity(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(item);
-    }
-  }
-  return merged.sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt));
 }
 
 export function newsForTicker(items: NewsItem[], ticker: string) {
@@ -80,4 +82,12 @@ export function buildNewsFeedSource(sources: string[]) {
   const unique = [...new Set(sources.map((source) => source.trim()).filter(Boolean))];
   if (!unique.length) return "未取得";
   return unique.join(" + ");
+}
+
+/** System ingest time drives "freshness" of the feed, not article publish dates. */
+export function resolveNewsFetchedAt(options: {
+  feedFetchedAt?: string | null;
+  fallbackPublishedAt?: string | null;
+}) {
+  return options.feedFetchedAt || options.fallbackPublishedAt || null;
 }

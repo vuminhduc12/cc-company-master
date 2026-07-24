@@ -29,8 +29,8 @@ import { useCountUp } from "@/lib/use-count-up";
 import { useUserWatchlist } from "@/lib/user-watchlist";
 import { watchStatusLabel } from "@/lib/status-labels";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
-import { useAutoNewsFeed } from "@/lib/use-auto-news-feed";
-import { latestNewsDate, mergeNewsSources, newsForTicker, resolveNewsQualitySource } from "@/lib/news-feed";
+import { useNewsFeed } from "@/lib/news-feed-context";
+import { latestNewsDate, mergeNewsSources, resolveNewsFetchedAt, resolveNewsQualitySource } from "@/lib/news-feed";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import { useSupabaseAuth } from "@/lib/use-supabase-auth";
 import type { AiStockExecutionAudit, DailyPrice, NewsItem, Stock, WatchStatus, WatchlistItem } from "@/types";
@@ -111,8 +111,7 @@ export default function DashboardPage() {
   // AIジョブの「主役」銘柄（旧実装ではRGTI固定だった部分を汎用化）
   const jobPrimaryTicker = jobResult?.stocks?.[0]?.stock.ticker;
   const selectedItem = dashboardWatchlist.find((item) => item.stock.ticker === selectedTicker) ?? dashboardWatchlist[0] ?? watchlist[0];
-  const dashboardTickers = useMemo(() => dashboardWatchlist.map((item) => item.stock.ticker), [dashboardWatchlist]);
-  const autoNewsFeed = useAutoNewsFeed(dashboardTickers, selectedItem.stock.ticker);
+  const autoNewsFeed = useNewsFeed();
   const activeHistoryData = historyData?.stock.ticker === selectedItem.stock.ticker ? historyData : null;
   const selectedLive = jobResult?.stocks?.find((stockResult) => stockResult.stock.ticker === selectedItem.stock.ticker);
   const cachedHistory = userWatchlist.getTickerHistory(selectedItem.stock.ticker);
@@ -130,7 +129,7 @@ export default function DashboardPage() {
   const latest = chartPrices[chartPrices.length - 1] ?? baseLatest;
   const selectedNews = mergeNewsSources(
     selectedLive?.news ?? [],
-    newsForTicker(autoNewsFeed.news, selectedItem.stock.ticker),
+    autoNewsFeed.newsFor(selectedItem.stock.ticker),
     activeHistoryData?.news ?? [],
     news.filter((item) => item.ticker === selectedItem.stock.ticker)
   );
@@ -179,11 +178,17 @@ export default function DashboardPage() {
         hasAiJobNews: Boolean(selectedLive?.news?.length),
         hasHistoryNews: Boolean(activeHistoryData?.news?.length)
       }),
-      asOf: autoNewsFeed.fetchedAt ?? latestNewsDate(selectedNews) ?? null,
+      asOf: resolveNewsFetchedAt({
+        feedFetchedAt: autoNewsFeed.fetchedAt,
+        fallbackPublishedAt: latestNewsDate(selectedNews)
+      }),
       tone: selectedNews.length
-        ? freshnessTone(autoNewsFeed.fetchedAt ?? latestNewsDate(selectedNews), 60, 24 * 60)
-        : "fallback",
-      detail: `${selectedNews.length}件。SEC/TDnet/NewsAPIを5分ごとに自動取得。AI Job未実行でも更新されます。`
+        ? freshnessTone(resolveNewsFetchedAt({
+          feedFetchedAt: autoNewsFeed.fetchedAt,
+          fallbackPublishedAt: latestNewsDate(selectedNews)
+        }), 6 * 60, 24 * 60)
+        : autoNewsFeed.status === "error" ? "error" : "fallback",
+      detail: `${selectedNews.length}件。cronが保存したニュースを5分ごとに読み取ります（タブ非表示時は停止）。`
     },
     {
       label: "AI Analysis",

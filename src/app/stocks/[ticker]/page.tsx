@@ -22,8 +22,8 @@ import { useCountUp } from "@/lib/use-count-up";
 import { useShortSellingData } from "@/lib/use-short-selling-data";
 import { useStockLiveData } from "@/lib/use-stock-live-data";
 import { useAiJobResult } from "@/lib/use-ai-job-result";
-import { useAutoNewsFeed } from "@/lib/use-auto-news-feed";
-import { latestNewsDate, mergeNewsSources, newsForTicker, resolveNewsQualitySource } from "@/lib/news-feed";
+import { useNewsFeed } from "@/lib/news-feed-context";
+import { latestNewsDate, mergeNewsSources, resolveNewsFetchedAt, resolveNewsQualitySource } from "@/lib/news-feed";
 import { useWatchlistLists } from "@/lib/watchlist-lists";
 import { resolveVisibleWatchlist } from "@/lib/watchlist-display";
 import { useUserWatchlist } from "@/lib/user-watchlist";
@@ -88,11 +88,10 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
   const latestPriceText = displayClose ? formatStockPrice(displayClose, stock) : "-";
   const regularPreviousClose = realtimeQuote?.regular.previousClose ?? mergedPrices[mergedPrices.length - 2]?.close ?? watchItem?.previousClose ?? null;
   const detailItems = resolveVisibleWatchlist(userWatchlist.items);
-  const detailTickers = useMemo(() => detailItems.map((item) => item.stock.ticker), [detailItems]);
-  const autoNewsFeed = useAutoNewsFeed(detailTickers, stock.ticker);
+  const autoNewsFeed = useNewsFeed();
   const tickerNews = mergeNewsSources(
     live?.news ?? [],
-    newsForTicker(autoNewsFeed.news, stock.ticker),
+    autoNewsFeed.newsFor(stock.ticker),
     activeHistoryData?.news ?? [],
     localNews.filter((newsItem) => newsItem.ticker === stock.ticker)
   );
@@ -140,11 +139,17 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
         hasAiJobNews: Boolean(live?.news?.length),
         hasHistoryNews: Boolean(activeHistoryData?.news?.length)
       }),
-      asOf: autoNewsFeed.fetchedAt ?? latestNewsDate(tickerNews) ?? null,
+      asOf: resolveNewsFetchedAt({
+        feedFetchedAt: autoNewsFeed.fetchedAt,
+        fallbackPublishedAt: latestNewsDate(tickerNews)
+      }),
       tone: tickerNews.length
-        ? freshnessTone(autoNewsFeed.fetchedAt ?? latestNewsDate(tickerNews), 60, 24 * 60)
-        : "fallback",
-      detail: `${tickerNews.length}件。SEC/TDnet/NewsAPIを5分ごとに自動取得。AI Job未実行でも更新されます。`
+        ? freshnessTone(resolveNewsFetchedAt({
+          feedFetchedAt: autoNewsFeed.fetchedAt,
+          fallbackPublishedAt: latestNewsDate(tickerNews)
+        }), 6 * 60, 24 * 60)
+        : autoNewsFeed.status === "error" ? "error" : "fallback",
+      detail: `${tickerNews.length}件。cronが保存したニュースを5分ごとに読み取ります（タブ非表示時は停止）。`
     },
     {
       label: "AI Analysis",
@@ -344,6 +349,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ ticker: 
           newsFeedSource={autoNewsFeed.source}
           newsFeedFetchedAt={autoNewsFeed.fetchedAt}
           newsFeedWarning={autoNewsFeed.warning}
+          newsFeedStatus={autoNewsFeed.status}
         />
       </section>
 

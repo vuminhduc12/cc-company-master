@@ -285,3 +285,16 @@ drop policy if exists "user_consents_insert_own" on public.user_consents;
 create policy "user_consents_insert_own"
   on public.user_consents for insert
   with check (auth.uid() = user_id);
+
+-- ─── news_feed_runs ───────────────────────────────────────────────────────────
+-- cron /api/cron/ir-news の最終実行メタ。UI の fetchedAt / lastCronAt に使う。
+-- service role からのみ書き込み（RLS なし）。
+
+create table if not exists public.news_feed_runs (
+  run_key text primary key,
+  ran_at timestamptz not null,
+  found integer not null default 0,
+  scanned integer not null default 0,
+  failed integer not null default 0,
+  updated_at timestamptz not null default now()
+);
