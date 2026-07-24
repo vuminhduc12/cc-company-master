@@ -1,4 +1,4 @@
-import { newsIdentity } from "@/lib/use-ai-job-result";
+import { newsIdentity } from "@/lib/news-identity";
 import type { NewsItem, WatchStatus, WatchlistItem } from "@/types";
 
 export const NEWS_FEED_POLL_MS = 5 * 60 * 1000;
