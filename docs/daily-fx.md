@@ -11,7 +11,10 @@ or a broker execution rate. ECB holidays and weekends retain the prior reference
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CRON_SECRET`
    are configured on the server. Never expose the service-role key to the browser.
 3. Deploy the application with the existing `vercel.json` schedule.
-4. Run the authenticated GET daily job once, or wait for the next scheduled run.
+4. For initial collection, POST `/api/cron/fx-refresh` with
+   `Authorization: Bearer <CRON_SECRET>`. This refreshes only FX, without running
+   stock analysis. Creating the tables alone does not collect any rates.
+   Alternatively, run the authenticated GET daily job once, or wait for the next scheduled run.
    Inspect `fxRefresh.ok` in its response. With no watchlist the job returns 412,
    but FX collection still runs first and its result is included.
 5. Check `/api/fx/usd-jpy`: `ok`, `rate`, `asOf` (provider date), `fetchedAt`,
