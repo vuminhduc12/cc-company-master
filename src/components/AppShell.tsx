@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FxRateDisplay } from "@/components/FxRateDisplay";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MacroReleaseWatcher } from "@/components/MacroReleaseWatcher";
@@ -185,12 +186,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </button>
             <div className="hidden items-center gap-2 lg:flex">
+              <div className="mr-3"><FxRateDisplay compact /></div>
               <QuickAiJobButton />
               <NewsNotificationCenter jobResult={jobResult} extraNews={irNews} />
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 text-xs font-black text-teal-100">{planLabel}</span>
             </div>
           </div>
           <div className="mt-3 space-y-2 text-xs lg:hidden">
+            <FxRateDisplay compact />
             <NewsNotificationCenter jobResult={jobResult} layout="mobile" extraNews={irNews} />
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1.5 font-black text-teal-100">{planLabel}</span>

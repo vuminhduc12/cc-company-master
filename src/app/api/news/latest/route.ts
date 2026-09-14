@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchNewsFromNewsApi } from "@/lib/news-api";
+import { fetchMarketNewsForStock } from "@/lib/news-api";
 import type { Stock } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     }
 
     const stock = body.stock ?? { ticker, companyName: ticker, exchange: "", sector: "" };
-    const result = await fetchNewsFromNewsApi(stock);
+    const result = await fetchMarketNewsForStock(stock);
 
     return NextResponse.json({
       ok: true,

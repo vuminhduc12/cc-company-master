@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
     for (const item of news) {
       if (item.source === "SEC EDGAR" || item.source === "TDnet") sources.add("SEC EDGAR / TDnet");
       else if (item.source === "NewsAPI" || item.source?.includes("NewsAPI")) sources.add("NewsAPI");
+      else if (item.source === "The News API" || item.source?.includes("The News API")) sources.add("The News API");
       else if (item.source) sources.add(item.source);
     }
 

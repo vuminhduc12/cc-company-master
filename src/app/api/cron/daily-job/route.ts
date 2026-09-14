@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { refreshUsdJpyRate } from "@/lib/fx-rates";
 import { aiLoginRequired, callOpenAiChatWithUsageGuard, recordAiCacheHit, reserveAiUsage, resolveAiUserFromRequest } from "@/lib/ai-usage";
 import { getPricesForTicker, news as mockNews, prices, report as mockReport } from "@/lib/mock-data";
 import { buildOpenAiCacheKey, getOpenAiCache, setOpenAiCache } from "@/lib/openai-cache";
@@ -39,6 +40,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
   if (authError) return authError;
 
   try {
+    const fxRefresh = source === "cron" ? await refreshUsdJpyRate() : null;
     const manualRequest = source === "manual" ? await parseManualJobRequest(request) : { stocks: [] as Stock[], useOpenAi: false };
     const canUseOpenAi = canUseOpenAiForDailyJob(source, manualRequest.useOpenAi);
     const aiUser = await resolveAiUserFromRequest(request);
@@ -67,7 +69,7 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
       : serverWatchlist?.items ?? [];
     if (targets.length === 0) {
       return NextResponse.json(
-        buildErrorResult("No watchlist targets found.", "Supabase watchlist_itemsに自動分析対象の銘柄がありません。Watchlist画面で銘柄を追加してください。"),
+        { ...buildErrorResult("No watchlist targets found.", "Supabase watchlist_itemsに自動分析対象の銘柄がありません。Watchlist画面で銘柄を追加してください。"), fxRefresh },
         { status: 412 }
       );
     }
@@ -126,11 +128,14 @@ async function runDailyJob(request: NextRequest, source: "cron" | "manual") {
     if (serverWatchlist?.warning) {
       result.warning = result.warning ? `${result.warning} ${serverWatchlist.warning}` : serverWatchlist.warning;
     }
+    if (fxRefresh && !fxRefresh.ok) {
+      result.warning = [result.warning, "ドル円の日次更新に失敗しました。保存済みレートを確認してください。"].filter(Boolean).join(" ");
+    }
     const saveResult = await saveJobResult(result);
     if (!saveResult.saved && saveResult.reason) {
       result.warning = result.warning ? `${result.warning} ${saveResult.reason}` : saveResult.reason;
     }
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, fxRefresh });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     const result = buildErrorResult(message);

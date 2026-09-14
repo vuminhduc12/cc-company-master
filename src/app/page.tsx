@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AiEmployeeCard } from "@/components/AiEmployeeCard";
 import { MarketHeroStrip } from "@/components/MarketHeroStrip";
+import { FxRateDisplay } from "@/components/FxRateDisplay";
 import { MacroMarketPanel } from "@/components/MacroMarketPanel";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { QuickAddModal } from "@/components/QuickAddModal";
@@ -302,6 +303,7 @@ export default function DashboardPage() {
 
       {/* ① マーケットサマリーヒーロー */}
       <MarketHeroStrip />
+      <FxRateDisplay />
 
       <MacroMarketPanel />
 

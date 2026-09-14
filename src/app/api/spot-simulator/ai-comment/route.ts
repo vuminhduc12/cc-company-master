@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getUsdJpyRate } from "@/lib/fx-rates";
 import { aiLoginRequired, callOpenAiChatWithUsageGuard, recordAiCacheHit, resolveAiUserFromRequest } from "@/lib/ai-usage";
 import { buildSpotSimulatorPrompt, getOpenAiModel, type AiDiagnosisMode } from "@/lib/ai-prompts";
 import { mergePriceSeries, validateDailyPriceSeries } from "@/lib/indicators";
@@ -715,32 +716,12 @@ async function fetchYahooQuote(ticker: string): Promise<QuoteSnapshot> {
 }
 
 async function fetchUsdJpyRate(): Promise<FxSnapshot> {
-  const response = await fetch("https://query2.finance.yahoo.com/v8/finance/chart/JPY=X?range=1d&interval=1m", {
-    headers: { "user-agent": "Mozilla/5.0" },
-    next: { revalidate: 0 }
-  });
-  if (!response.ok) throw new Error(`USD/JPY error: ${response.status}`);
-
-  const payload = await response.json() as {
-    chart?: {
-      result?: Array<{
-        meta?: { regularMarketPrice?: number; regularMarketTime?: number };
-        timestamp?: number[];
-        indicators?: { quote?: Array<{ close?: Array<number | null> }> };
-      }>;
-    };
-  };
-  const result = payload.chart?.result?.[0];
-  const closes = result?.indicators?.quote?.[0]?.close?.filter((value): value is number => Number.isFinite(value)) ?? [];
-  const rate = result?.meta?.regularMarketPrice ?? closes.at(-1);
-  if (!Number.isFinite(rate) || !rate) throw new Error("USD/JPY rate not found");
-
-  const timestamp = result?.meta?.regularMarketTime ?? result?.timestamp?.at(-1);
+  const snapshot = await getUsdJpyRate();
   return {
-    rate,
-    source: "Yahoo Finance",
-    asOf: timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString(),
-    ok: true
+    rate: snapshot.rate,
+    source: snapshot.warning ? `${snapshot.source} / ${snapshot.warning}` : snapshot.source,
+    asOf: snapshot.asOf,
+    ok: !snapshot.stale && !snapshot.updateFailed
   };
 }
 
@@ -910,7 +891,7 @@ function buildRuleRisk(
   }
   if (input.currency === "USD" && !fx.ok) {
     score += 1;
-    reasons.push("USD/JPYがリアルタイム取得できず入力値で代用");
+    reasons.push("USD/JPYの日次基準レートを更新できず、保存値または入力値で代用");
   }
 
   return {

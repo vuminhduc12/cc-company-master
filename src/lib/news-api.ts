@@ -1,4 +1,5 @@
 import { news as localNews } from "@/lib/mock-data";
+import { canFetchJapaneseGeneralNews, fetchJapaneseNewsFromTheNewsApi } from "@/lib/the-news-api";
 import type { NewsItem, Stock } from "@/types";
 
 export type NewsApiFetchResult = {
@@ -8,6 +9,13 @@ export type NewsApiFetchResult = {
   mode: "live" | "fallback";
   warning?: string;
 };
+
+export async function fetchMarketNewsForStock(stock: Stock): Promise<NewsApiFetchResult> {
+  if (canFetchJapaneseGeneralNews(stock)) {
+    return fetchJapaneseNewsFromTheNewsApi(stock);
+  }
+  return fetchNewsFromNewsApi(stock);
+}
 
 export async function fetchNewsFromNewsApi(stock: Stock): Promise<NewsApiFetchResult> {
   const ticker = stock.ticker.trim().toUpperCase();

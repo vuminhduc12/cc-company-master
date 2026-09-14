@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { scanIrNewsForWatchlist } from "@/lib/ir-news";
-import { fetchNewsFromNewsApi } from "@/lib/news-api";
+import { fetchMarketNewsForStock } from "@/lib/news-api";
 import { NEWS_API_CRON_LIMIT } from "@/lib/news-feed";
 import { loadServerWatchlistItems } from "@/lib/server-watchlist";
 import { saveNewsFeedRunMeta, saveNewsItems } from "@/lib/supabase";
@@ -58,11 +58,9 @@ async function runIrNewsScan(request: NextRequest) {
 }
 
 async function fetchSupplementalNewsApi(items: WatchlistItem[]) {
-  const usTargets = items
-    .filter((item) => !item.stock.ticker.endsWith(".T") && item.stock.exchange !== "TSE")
-    .slice(0, NEWS_API_CRON_LIMIT);
+  const targets = items.slice(0, NEWS_API_CRON_LIMIT);
 
-  if (!usTargets.length || !process.env.NEWS_API_KEY) {
+  if (!targets.length || (!process.env.NEWS_API_KEY && !process.env.THE_NEWS_API_KEY)) {
     return { news: [] as NewsItem[], failed: 0, errors: [] as string[] };
   }
 
@@ -70,13 +68,13 @@ async function fetchSupplementalNewsApi(items: WatchlistItem[]) {
   const errors: string[] = [];
   let failed = 0;
 
-  for (const item of usTargets) {
+  for (const item of targets) {
     try {
-      const result = await fetchNewsFromNewsApi(item.stock);
+      const result = await fetchMarketNewsForStock(item.stock);
       if (result.mode === "live") {
         news.push(...result.news.map((entry) => ({
           ...entry,
-          source: entry.source === "NewsAPI" || entry.source.includes("NewsAPI")
+          source: entry.source === "NewsAPI" || entry.source.includes("NewsAPI") || entry.source.includes("The News API")
             ? entry.source
             : `NewsAPI / ${entry.source}`
         })));
@@ -86,7 +84,7 @@ async function fetchSupplementalNewsApi(items: WatchlistItem[]) {
       }
     } catch (error) {
       failed++;
-      errors.push(`${item.stock.ticker} NewsAPI: ${error instanceof Error ? error.message : "failed"}`);
+      errors.push(`${item.stock.ticker} general news: ${error instanceof Error ? error.message : "failed"}`);
     }
   }
 

@@ -87,6 +87,7 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
   const [fxRate, setFxRate] = useState("156");
   const [fxSource, setFxSource] = useState("手入力");
   const [fxAsOf, setFxAsOf] = useState("");
+  const [fxWarning, setFxWarning] = useState("");
   const [aiComment, setAiComment] = useState<AiRiskComment | null>(null);
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [aiMode, setAiMode] = useState<"normal" | "detailed">("normal");
@@ -121,14 +122,16 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
         if (!response.ok) throw new Error("FX fetch failed");
         const data = await response.json();
         if (!ignore && data.ok && Number.isFinite(data.rate)) {
-          setFxRate(Number(data.rate).toFixed(2));
+          setFxRate(String(data.rate));
           setFxSource(data.source ?? "自動取得");
           setFxAsOf(data.asOf ?? "");
+          setFxWarning(data.warning ?? "");
         }
       } catch {
         if (!ignore) {
           setFxSource("手入力");
           setFxAsOf("");
+          setFxWarning("日次レートを取得できません。現在の値は手入力の参考値です。");
         }
       }
     }
@@ -240,7 +243,12 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
             <NumberField label="損切り %" value={stopLossPercent} onChange={setStopLossPercent} step="0.5" />
             <NumberField label="手数料合計 円" value={feeJpy} onChange={setFeeJpy} min="0" step="100" />
             {currency === "USD" ? (
-              <NumberField label="USD/JPY" value={fxRate} onChange={setFxRate} min="0" step="0.01" />
+              <NumberField label="USD/JPY" value={fxRate} onChange={(value) => {
+                setFxRate(value);
+                setFxSource("手入力");
+                setFxAsOf("");
+                setFxWarning("");
+              }} min="0" step="0.01" />
             ) : (
               <div className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2">
                 <p className="text-[11px] font-semibold text-slate-500">通貨</p>
@@ -271,7 +279,10 @@ export function SpotEntrySimulator({ stock, price, news, score }: Props) {
 
           <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/65 p-3 text-xs leading-5 text-slate-400">
             <p>税率: {accountType === "nisa" ? "0%" : `${(JAPAN_CAPITAL_GAINS_TAX_RATE * 100).toFixed(3)}%`} / 利益が出た場合のみ課税</p>
-            {currency === "USD" ? <p className="mt-1">為替: {fxSource}{fxAsOf ? ` / ${formatDateTime(fxAsOf)}` : ""}</p> : null}
+            {currency === "USD" ? <>
+              <p className="mt-1">為替: {fxSource}{fxAsOf ? ` / 基準日 ${fxAsOf}` : ""}</p>
+              {fxWarning ? <p className="mt-1 text-amber-700">{fxWarning}</p> : null}
+            </> : null}
             {accountType === "nisa" ? <p className="mt-1 text-yellow-200">NISAは利益非課税ですが、損失の損益通算はできません。</p> : null}
           </div>
         </div>
